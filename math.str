@@ -1,0 +1,175 @@
+# Standard math library for Stricta (backed by C libm via @extern)
+
+PI: float = 3.141592653589793
+E: float = 2.718281828459045
+TAU: float = 6.283185307179586
+
+@extern("sin")
+def sin(x: float) -> float:
+    return 0.0
+
+@extern("cos")
+def cos(x: float) -> float:
+    return 0.0
+
+@extern("tan")
+def tan(x: float) -> float:
+    return 0.0
+
+@extern("asin")
+def asin(x: float) -> float:
+    return 0.0
+
+@extern("acos")
+def acos(x: float) -> float:
+    return 0.0
+
+@extern("atan")
+def atan(x: float) -> float:
+    return 0.0
+
+@extern("atan2")
+def atan2(y: float, x: float) -> float:
+    return 0.0
+
+@extern("sinh")
+def sinh(x: float) -> float:
+    return 0.0
+
+@extern("cosh")
+def cosh(x: float) -> float:
+    return 0.0
+
+@extern("tanh")
+def tanh(x: float) -> float:
+    return 0.0
+
+@extern("exp")
+def exp(x: float) -> float:
+    return 0.0
+
+@extern("log")
+def _c_log(x: float) -> float:
+    return 0.0
+
+@extern("log10")
+def log10(x: float) -> float:
+    return 0.0
+
+@extern("log2")
+def log2(x: float) -> float:
+    return 0.0
+
+@extern("sqrt")
+def sqrt(x: float) -> float:
+    return 0.0
+
+@extern("cbrt")
+def cbrt(x: float) -> float:
+    return 0.0
+
+@extern("pow")
+def pow(x: float, y: float) -> float:
+    return 0.0
+
+@extern("ceil")
+def _c_ceil(x: float) -> float:
+    return 0.0
+
+@extern("floor")
+def _c_floor(x: float) -> float:
+    return 0.0
+
+@extern("trunc")
+def _c_trunc(x: float) -> float:
+    return 0.0
+
+@extern("fabs")
+def fabs(x: float) -> float:
+    return 0.0
+
+@extern("fmod")
+def fmod(x: float, y: float) -> float:
+    return 0.0
+
+@extern("hypot")
+def hypot(x: float, y: float) -> float:
+    return 0.0
+
+INF: float = exp(1000.0)
+NAN: float = _c_log(-1.0)
+
+def log(x: float, base: float = 0.0) -> float:
+    if base == 0.0:
+        return _c_log(x)
+    return _c_log(x) / _c_log(base)
+
+def ceil(x: float) -> int:
+    return int(_c_ceil(x))
+
+def floor(x: float) -> int:
+    return int(_c_floor(x))
+
+def trunc(x: float) -> int:
+    return int(_c_trunc(x))
+
+def radians(deg: float) -> float:
+    return deg * (PI / 180.0)
+
+def degrees(rad: float) -> float:
+    return rad * (180.0 / PI)
+
+def isnan(x: float) -> bool:
+    return x != x
+
+def isinf(x: float) -> bool:
+    return x == INF or x == -INF
+
+def isfinite(x: float) -> bool:
+    return not isnan(x) and not isinf(x)
+
+def isclose(a: float, b: float, rel_tol: float = 1e-9, abs_tol: float = 0.0) -> bool:
+    if a == b:
+        return True
+    if isinf(a) or isinf(b) or isnan(a) or isnan(b):
+        return False
+    diff = fabs(a - b)
+    ma = fabs(a)
+    mb = fabs(b)
+    m = ma if ma > mb else mb
+    tol = rel_tol * m
+    if abs_tol > tol:
+        tol = abs_tol
+    return diff <= tol
+
+def gcd(a: int, b: int) -> int:
+    x = -a if a < 0 else a
+    y = -b if b < 0 else b
+    while y != 0:
+        t = x % y
+        x = y
+        y = t
+    return x
+
+def lcm(a: int, b: int) -> int:
+    if a == 0 or b == 0:
+        return 0
+    g = gcd(a, b)
+    pa = -a if a < 0 else a
+    pb = -b if b < 0 else b
+    return (pa // g) * pb
+
+def factorial(n: int) -> int:
+    if n < 0:
+        raise "ValueError: factorial() not defined for negative values"
+    res = 1
+    for i in range(2, n + 1):
+        res *= i
+    return res
+
+def clamp(x: float, lo: float, hi: float) -> float:
+    if x < lo:
+        return lo
+    if x > hi:
+        return hi
+    return x

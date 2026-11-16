@@ -1,0 +1,80 @@
+# Object-oriented filesystem paths (modeled after Python's pathlib.Path)
+
+import os
+
+class Path:
+    _path: str
+
+    def __init__(self, p: str = ".") -> None:
+        cleaned = p.strip()
+        while len(cleaned) > 1 and cleaned.endswith("/"):
+            cleaned = cleaned[:len(cleaned) - 1]
+        self._path = cleaned if cleaned != "" else "."
+
+    def copy(self) -> Path:
+        return Path(self._path.copy())
+
+    def __str__(self) -> str:
+        return self._path.copy()
+
+    def join(self, other: str) -> Path:
+        return Path(os.path_join(self._path, other))
+
+    def name(self) -> str:
+        return os.basename(self._path)
+
+    def parent(self) -> Path:
+        return Path(os.dirname(self._path))
+
+    def suffix(self) -> str:
+        nm = self.name()
+        dot = -1
+        for i in range(len(nm) - 1, 0, -1):
+            if nm[i:i + 1] == ".":
+                dot = i
+                break
+        if dot <= 0:
+            return ""
+        return nm[dot:]
+
+    def stem(self) -> str:
+        nm = self.name()
+        suf = self.suffix()
+        if suf == "":
+            return nm
+        return nm[:len(nm) - len(suf)]
+
+    def exists(self) -> bool:
+        return os.exists(self._path)
+
+    def is_dir(self) -> bool:
+        return os.isdir(self._path)
+
+    def is_file(self) -> bool:
+        return os.exists(self._path) and not os.isdir(self._path)
+
+    def mkdir(self, parents: bool = True) -> bool:
+        if parents:
+            return os.mkdir_p(self._path)
+        return os.mkdir_p(self._path)
+
+    def read_text(self) -> str:
+        with open(self._path, "r") as f:
+            return f.read()
+
+    def write_text(self, content: str) -> None:
+        with open(self._path, "w") as f:
+            f.write(content)
+
+    def iterdir(self) -> list[Path]:
+        names = os.listdir(self._path)
+        out: list[Path] = []
+        for nm in names:
+            out.append(self.join(nm))
+        return out
+
+    def remove(self) -> bool:
+        return os.remove(self._path)
+
+def cwd() -> Path:
+    return Path(os.getcwd())

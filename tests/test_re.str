@@ -1,0 +1,44 @@
+import re
+
+m1 = re.search("([a-z]+)-([0-9]+)", "item abc-123 done")
+assert m1 is not None
+assert m1.group(0) == "abc-123"
+assert m1.group(1) == "abc"
+assert m1.group(2) == "123"
+assert m1.groups() == ["abc", "123"]
+assert m1.span() == (5, 12)
+
+assert re.match("[0-9]+", "123abc") is not None
+assert re.match("[0-9]+", "abc123") is None
+assert re.fullmatch("[0-9]+", "12345") is not None
+assert re.fullmatch("[0-9]+", "12345a") is None
+
+# Case-insensitive flag with kwargs
+m_ic = re.search("hello", "say HeLLo world", flags=re.IGNORECASE)
+assert m_ic is not None and m_ic.group(0) == "HeLLo"
+
+# findall, sub, split
+nums = re.findall("[0-9]+", "a1 b22 c333")
+assert nums == ["1", "22", "333"]
+
+sub1 = re.sub("[0-9]+", "#", "a1 b22 c333")
+assert sub1 == "a# b# c#"
+sub2 = re.sub("[0-9]+", "#", "a1 b22 c333", count=2)
+assert sub2 == "a# b# c333"
+
+parts = re.split("[,;]+", "one,two;;three,four")
+assert parts == ["one", "two", "three", "four"]
+parts2 = re.split("[,;]+", "one,two;;three,four", maxsplit=1)
+assert parts2 == ["one", "two;;three,four"]
+
+assert re.escape("a.b+c?") == "a\\.b\\+c\\?"
+
+# Invalid regex raises catchable error
+bad = False
+try:
+    _ = re.compile("[unclosed")
+except Exception as e:
+    bad = "invalid regex" in e
+assert bad
+
+print("RE TESTS PASSED")

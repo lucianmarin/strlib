@@ -1,0 +1,842 @@
+# LMON (Light Machine / Lucian Marin Object Notation) parser & serializer for Stricta
+
+# Value kind constants
+LMON_NULL: int = 0
+LMON_BOOL: int = 1
+LMON_INT: int = 2
+LMON_FLOAT: int = 3
+LMON_STR: int = 4
+LMON_ARRAY: int = 5
+LMON_OBJECT: int = 6
+
+class LmonValue:
+    kind: int
+    bval: bool
+    ival: int
+    fval: float
+    sval: str
+    arr: list[LmonValue]
+    keys: list[str]
+    vals: list[LmonValue]
+
+    def __init__(self, kind: int) -> None:
+        self.kind = kind
+        self.bval = False
+        self.ival = 0
+        self.fval = 0.0
+        self.sval = ""
+        self.arr = []
+        self.keys = []
+        self.vals = []
+
+    def copy(self) -> LmonValue:
+        c = LmonValue(self.kind)
+        c.bval = self.bval
+        c.ival = self.ival
+        c.fval = self.fval
+        c.sval = self.sval.copy()
+        for it in self.arr:
+            c.arr.append(it.copy())
+        for i in range(len(self.keys)):
+            c.keys.append(self.keys[i].copy())
+            c.vals.append(self.vals[i].copy())
+        return c
+
+    def is_null(self) -> bool:
+        return self.kind == LMON_NULL
+
+    def is_bool(self) -> bool:
+        return self.kind == LMON_BOOL
+
+    def is_int(self) -> bool:
+        return self.kind == LMON_INT
+
+    def is_float(self) -> bool:
+        return self.kind == LMON_FLOAT
+
+    def is_str(self) -> bool:
+        return self.kind == LMON_STR
+
+    def is_array(self) -> bool:
+        return self.kind == LMON_ARRAY
+
+    def is_object(self) -> bool:
+        return self.kind == LMON_OBJECT
+
+    def as_str(self, default: str = "") -> str:
+        if self.kind == LMON_STR:
+            return self.sval.copy()
+        return default.copy()
+
+    def as_int(self, default: int = 0) -> int:
+        if self.kind == LMON_INT:
+            return self.ival
+        return default
+
+    def as_float(self, default: float = 0.0) -> float:
+        if self.kind == LMON_FLOAT:
+            return self.fval
+        if self.kind == LMON_INT:
+            return float(self.ival)
+        return default
+
+    def as_bool(self, default: bool = False) -> bool:
+        if self.kind == LMON_BOOL:
+            return self.bval
+        return default
+
+    def push(self, v: LmonValue) -> None:
+        self.arr.append(v)
+
+    def has(self, key: str) -> bool:
+        for k in self.keys:
+            if k == key:
+                return True
+        return False
+
+    def get(self, key: str) -> LmonValue | None:
+        for i in range(len(self.keys)):
+            if self.keys[i] == key:
+                return self.vals[i].copy()
+        return None
+
+    def get_str(self, key: str, default: str = "") -> str:
+        for i in range(len(self.keys)):
+            if self.keys[i] == key and self.vals[i].kind == LMON_STR:
+                return self.vals[i].sval.copy()
+        return default.copy()
+
+    def get_int(self, key: str, default: int = 0) -> int:
+        for i in range(len(self.keys)):
+            if self.keys[i] == key and self.vals[i].kind == LMON_INT:
+                return self.vals[i].ival
+        return default
+
+    def get_bool(self, key: str, default: bool = False) -> bool:
+        for i in range(len(self.keys)):
+            if self.keys[i] == key and self.vals[i].kind == LMON_BOOL:
+                return self.vals[i].bval
+        return default
+
+    def set(self, key: str, val: LmonValue) -> None:
+        for i in range(len(self.keys)):
+            if self.keys[i] == key:
+                self.vals[i] = val
+                return
+        self.keys.append(key)
+        self.vals.append(val)
+
+    def len_val(self) -> int:
+        if self.kind == LMON_ARRAY:
+            return len(self.arr)
+        if self.kind == LMON_OBJECT:
+            return len(self.keys)
+        if self.kind == LMON_STR:
+            return len(self.sval)
+        return 0
+
+def lmon_null() -> LmonValue:
+    return LmonValue(LMON_NULL)
+
+def lmon_bool(b: bool) -> LmonValue:
+    v = LmonValue(LMON_BOOL)
+    v.bval = b
+    return v
+
+def lmon_int(i: int) -> LmonValue:
+    v = LmonValue(LMON_INT)
+    v.ival = i
+    return v
+
+def lmon_float(f: float) -> LmonValue:
+    v = LmonValue(LMON_FLOAT)
+    v.fval = f
+    return v
+
+def lmon_str(s: str) -> LmonValue:
+    v = LmonValue(LMON_STR)
+    v.sval = s
+    return v
+
+def lmon_array() -> LmonValue:
+    return LmonValue(LMON_ARRAY)
+
+def lmon_object() -> LmonValue:
+    return LmonValue(LMON_OBJECT)
+
+def _is_alpha_or_us(b: int) -> bool:
+    return (b >= 65 and b <= 90) or (b >= 97 and b <= 122) or b == 95
+
+def _is_digit(b: int) -> bool:
+    return b >= 48 and b <= 57
+
+def _is_key_cont(b: int) -> bool:
+    return _is_alpha_or_us(b) or _is_digit(b) or b == 45
+
+def _is_reserved(s: str) -> bool:
+    return s == "true" or s == "false" or s == "null"
+
+def _hex_digit(b: int) -> int:
+    if b >= 48 and b <= 57:
+        return b - 48
+    if b >= 65 and b <= 70:
+        return b - 55
+    if b >= 97 and b <= 102:
+        return b - 87
+    return -1
+
+def _utf8_encode(cp: int) -> str:
+    if cp < 0x80:
+        return chr(cp)
+    if cp < 0x800:
+        return chr(0xC0 | (cp >> 6)) + chr(0x80 | (cp & 0x3F))
+    if cp < 0x10000:
+        return chr(0xE0 | (cp >> 12)) + chr(0x80 | ((cp >> 6) & 0x3F)) + chr(0x80 | (cp & 0x3F))
+    return (chr(0xF0 | (cp >> 18)) + chr(0x80 | ((cp >> 12) & 0x3F)) +
+            chr(0x80 | ((cp >> 6) & 0x3F)) + chr(0x80 | (cp & 0x3F)))
+
+class _Parser:
+    s: str
+    n: int
+    pos: int
+    line_indent: int
+    line_start: int
+    indent_char: str
+    indent_width: int
+
+    def __init__(self, s: str) -> None:
+        self.n = len(s)
+        self.s = s
+        self.pos = 0
+        self.line_indent = -2
+        self.line_start = 0
+        self.indent_char = ""
+        self.indent_width = 0
+
+    def fail(self, msg: str, at_pos: int) -> None:
+        line = 1
+        col = 1
+        i = 0
+        end = at_pos if at_pos < self.n else self.n
+        while i < end:
+            b = ord(self.s[i])
+            if b == 10:
+                line += 1
+                col = 1
+            elif b == 13:
+                line += 1
+                col = 1
+                if i + 1 < end and ord(self.s[i + 1]) == 10:
+                    i += 1
+            else:
+                col += 1
+            i += 1
+        raise f"{msg}: line {line} column {col} (char {end})"
+
+    def peek_line(self) -> int:
+        if self.line_indent != -2:
+            return self.line_indent
+
+        p = self.pos
+        n = self.n
+        while p < n:
+            line_begin = p
+            fb = ord(self.s[p])
+
+            if fb == 32:
+                while p < n and ord(self.s[p]) == 32:
+                    p += 1
+                if p >= n:
+                    self.pos = p
+                    self.line_indent = -1
+                    return -1
+                cb = ord(self.s[p])
+                if cb == 10:
+                    p += 1
+                    continue
+                if cb == 13:
+                    p += 2 if (p + 1 < n and ord(self.s[p + 1]) == 10) else 1
+                    continue
+                if cb == 9:
+                    q = p + 1
+                    while q < n and (ord(self.s[q]) == 32 or ord(self.s[q]) == 9):
+                        q += 1
+                    if q >= n:
+                        self.pos = q
+                        self.line_indent = -1
+                        return -1
+                    qb = ord(self.s[q])
+                    if qb == 10:
+                        p = q + 1
+                        continue
+                    if qb == 13:
+                        p = (q + 2) if (q + 1 < n and ord(self.s[q + 1]) == 10) else (q + 1)
+                        continue
+                    self.fail("mixed spaces and tabs in indentation", p)
+                cnt = p - line_begin
+                level = 0
+                if self.indent_char == "":
+                    self.indent_char = " "
+                    self.indent_width = cnt
+                    level = 1
+                elif self.indent_char != " ":
+                    self.fail("inconsistent indentation: document uses tabs, got spaces", line_begin)
+                else:
+                    w = self.indent_width
+                    if cnt % w != 0:
+                        self.fail(f"indentation must be a multiple of {w} spaces", line_begin)
+                    level = cnt // w
+                self.pos = p
+                self.line_start = line_begin
+                self.line_indent = level
+                return level
+
+            if fb == 9:
+                while p < n and ord(self.s[p]) == 9:
+                    p += 1
+                if p >= n:
+                    self.pos = p
+                    self.line_indent = -1
+                    return -1
+                cb = ord(self.s[p])
+                if cb == 10:
+                    p += 1
+                    continue
+                if cb == 13:
+                    p += 2 if (p + 1 < n and ord(self.s[p + 1]) == 10) else 1
+                    continue
+                if cb == 32:
+                    q = p + 1
+                    while q < n and (ord(self.s[q]) == 32 or ord(self.s[q]) == 9):
+                        q += 1
+                    if q >= n:
+                        self.pos = q
+                        self.line_indent = -1
+                        return -1
+                    qb = ord(self.s[q])
+                    if qb == 10:
+                        p = q + 1
+                        continue
+                    if qb == 13:
+                        p = (q + 2) if (q + 1 < n and ord(self.s[q + 1]) == 10) else (q + 1)
+                        continue
+                    self.fail("mixed tabs and spaces in indentation", p)
+                cnt = p - line_begin
+                level = 0
+                if self.indent_char == "":
+                    self.indent_char = "\t"
+                    self.indent_width = cnt
+                    level = 1
+                elif self.indent_char != "\t":
+                    self.fail("inconsistent indentation: document uses spaces, got tab", line_begin)
+                else:
+                    w = self.indent_width
+                    if cnt % w != 0:
+                        self.fail(f"indentation must be a multiple of {w} tabs", line_begin)
+                    level = cnt // w
+                self.pos = p
+                self.line_start = line_begin
+                self.line_indent = level
+                return level
+
+            if fb == 10:
+                p += 1
+                continue
+            if fb == 13:
+                p += 2 if (p + 1 < n and ord(self.s[p + 1]) == 10) else 1
+                continue
+
+            self.pos = p
+            self.line_start = line_begin
+            self.line_indent = 0
+            return 0
+
+        self.pos = p
+        self.line_indent = -1
+        return -1
+
+    def consume_line_end(self, allow_eof: bool) -> None:
+        p = self.pos
+        n = self.n
+        if p >= n:
+            if not allow_eof:
+                self.fail("unexpected end of input; expected nested block", p)
+            self.line_indent = -1
+            return
+        b = ord(self.s[p])
+        if b == 10:
+            self.pos = p + 1
+            self.line_indent = -2
+            return
+        if b == 13:
+            self.pos = (p + 2) if (p + 1 < n and ord(self.s[p + 1]) == 10) else (p + 1)
+            self.line_indent = -2
+            return
+        if b == 9:
+            self.fail("tabs are not allowed outside strings", p)
+        if b == 32:
+            self.fail("trailing spaces are not allowed", p)
+        self.fail("unexpected character at end of line", p)
+
+    def parse_hex4(self, p: int) -> int:
+        if p + 4 > self.n:
+            self.fail("invalid \\uXXXX escape sequence", p)
+        val = 0
+        for i in range(4):
+            d = _hex_digit(ord(self.s[p + i]))
+            if d < 0:
+                self.fail("invalid \\uXXXX escape sequence", p + i)
+            val = val * 16 + d
+        return val
+
+    def parse_string(self) -> str:
+        p = self.pos
+        n = self.n
+        if p >= n or ord(self.s[p]) != 34:
+            self.fail("expected '\"'", p)
+        p += 1
+        parts: list[str] = []
+        while True:
+            if p >= n:
+                self.fail("unterminated string literal", p)
+            start = p
+            while p < n:
+                b = ord(self.s[p])
+                if b == 34 or b == 92 or b < 32:
+                    break
+                p += 1
+            if p > start:
+                parts.append(self.s[start:p])
+            if p >= n:
+                self.fail("unterminated string literal", p)
+            b = ord(self.s[p])
+            if b == 34:
+                self.pos = p + 1
+                return "".join(parts)
+            if b == 92:
+                p += 1
+                if p >= n:
+                    self.fail("unterminated escape sequence", p)
+                eb = ord(self.s[p])
+                if eb == 34:
+                    parts.append("\"")
+                    p += 1
+                elif eb == 92:
+                    parts.append("\\")
+                    p += 1
+                elif eb == 47:
+                    parts.append("/")
+                    p += 1
+                elif eb == 98:
+                    parts.append("\b")
+                    p += 1
+                elif eb == 102:
+                    parts.append("\f")
+                    p += 1
+                elif eb == 110:
+                    parts.append("\n")
+                    p += 1
+                elif eb == 114:
+                    parts.append("\r")
+                    p += 1
+                elif eb == 116:
+                    parts.append("\t")
+                    p += 1
+                elif eb == 117:
+                    p += 1
+                    code = self.parse_hex4(p)
+                    p += 4
+                    if code >= 0xD800 and code <= 0xDBFF:
+                        if p + 6 > n or ord(self.s[p]) != 92 or ord(self.s[p + 1]) != 117:
+                            self.fail("unpaired high surrogate in string", p)
+                        low = self.parse_hex4(p + 2)
+                        if low < 0xDC00 or low > 0xDFFF:
+                            self.fail("expected low surrogate (DC00..DFFF)", p + 2)
+                        code = 0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00)
+                        p += 6
+                    elif code >= 0xDC00 and code <= 0xDFFF:
+                        self.fail("unpaired low surrogate in string", p - 4)
+                    parts.append(_utf8_encode(code))
+                else:
+                    self.fail("invalid escape sequence", p - 1)
+            else:
+                self.fail("unescaped control character in string", p)
+
+    def parse_number(self) -> LmonValue:
+        start = self.pos
+        p = start
+        n = self.n
+        if p < n and ord(self.s[p]) == 45:
+            p += 1
+        if p >= n or not _is_digit(ord(self.s[p])):
+            self.fail("invalid number literal", start)
+        if ord(self.s[p]) == 48:
+            p += 1
+            if p < n and _is_digit(ord(self.s[p])):
+                self.fail("leading zero in number literal", p)
+        else:
+            while p < n and _is_digit(ord(self.s[p])):
+                p += 1
+        is_flt = False
+        if p < n and ord(self.s[p]) == 46:
+            is_flt = True
+            p += 1
+            if p >= n or not _is_digit(ord(self.s[p])):
+                self.fail("malformed decimal number", p)
+            while p < n and _is_digit(ord(self.s[p])):
+                p += 1
+        if p < n and (ord(self.s[p]) == 101 or ord(self.s[p]) == 69):
+            is_flt = True
+            p += 1
+            if p < n and (ord(self.s[p]) == 43 or ord(self.s[p]) == 45):
+                p += 1
+            if p >= n or not _is_digit(ord(self.s[p])):
+                self.fail("malformed exponent in number", p)
+            while p < n and _is_digit(ord(self.s[p])):
+                p += 1
+        if p < n:
+            tb = ord(self.s[p])
+            if _is_digit(tb) or tb == 46 or tb == 101 or tb == 69 or tb == 43 or tb == 45:
+                self.fail("malformed number literal", p)
+        raw = self.s[start:p]
+        self.pos = p
+        if is_flt:
+            return lmon_float(float(raw))
+        return lmon_int(int(raw))
+
+    def parse_inline_array(self) -> LmonValue:
+        self.pos += 1
+        while self.pos < self.n and ord(self.s[self.pos]) == 32:
+            self.pos += 1
+        if self.pos < self.n and ord(self.s[self.pos]) == 93:
+            self.pos += 1
+            return lmon_array()
+        arr = lmon_array()
+        while True:
+            arr.push(self.parse_inline_value())
+            while self.pos < self.n and ord(self.s[self.pos]) == 32:
+                self.pos += 1
+            if self.pos >= self.n:
+                self.fail("unterminated inline array", self.pos)
+            b = ord(self.s[self.pos])
+            if b == 44:
+                self.pos += 1
+                while self.pos < self.n and ord(self.s[self.pos]) == 32:
+                    self.pos += 1
+                if self.pos < self.n and ord(self.s[self.pos]) == 93:
+                    self.fail("trailing comma in inline array", self.pos)
+            elif b == 93:
+                self.pos += 1
+                return arr
+            elif b == 9:
+                self.fail("tabs are not allowed outside strings", self.pos)
+            else:
+                self.fail("expected ',' or ']' in inline array", self.pos)
+
+    def parse_inline_value(self) -> LmonValue:
+        p = self.pos
+        n = self.n
+        if p >= n:
+            self.fail("expected value", p)
+        b = ord(self.s[p])
+        if b == 34:
+            return lmon_str(self.parse_string())
+        if b == 45 or _is_digit(b):
+            return self.parse_number()
+        if b == 116:
+            if p + 4 <= n and self.s[p:p + 4] == "true":
+                self.pos = p + 4
+                return lmon_bool(True)
+            self.fail("invalid literal; expected 'true'", p)
+        if b == 102:
+            if p + 5 <= n and self.s[p:p + 5] == "false":
+                self.pos = p + 5
+                return lmon_bool(False)
+            self.fail("invalid literal; expected 'false'", p)
+        if b == 110:
+            if p + 4 <= n and self.s[p:p + 4] == "null":
+                self.pos = p + 4
+                return lmon_null()
+            self.fail("invalid literal; expected 'null'", p)
+        if b == 91:
+            return self.parse_inline_array()
+        if b == 123:
+            if p + 1 < n and ord(self.s[p + 1]) == 125:
+                self.pos = p + 2
+                return lmon_object()
+            self.fail("curly-brace objects are not allowed in LMON; use indentation or '{}'", p)
+        self.fail("unexpected character when parsing value", p)
+        return lmon_null()
+
+    def parse_key(self) -> str:
+        p = self.pos
+        if p < self.n and ord(self.s[p]) == 34:
+            return self.parse_string()
+        if p >= self.n or not _is_alpha_or_us(ord(self.s[p])):
+            self.fail("expected object key", p)
+        q = p + 1
+        while q < self.n and _is_key_cont(ord(self.s[q])):
+            q += 1
+        key = self.s[p:q]
+        if _is_reserved(key):
+            self.fail(f"reserved literal '{key}' must be quoted when used as a key", p)
+        self.pos = q
+        return key
+
+    def is_dash_item(self) -> bool:
+        p = self.pos
+        if p >= self.n or ord(self.s[p]) != 45:
+            return False
+        if p + 1 >= self.n:
+            return True
+        nb = ord(self.s[p + 1])
+        return nb == 32 or nb == 10 or nb == 13
+
+    def parse_nested_block(self, expected_indent: int, from_object: bool) -> LmonValue:
+        indent = self.peek_line()
+        if indent < 0:
+            self.fail("expected indented block, got end of input", self.pos)
+        if from_object and indent == expected_indent - 1 and self.is_dash_item():
+            return self.parse_block_array(expected_indent - 1, True)
+        if indent != expected_indent:
+            self.fail(f"expected indentation level {expected_indent}, got {indent}", self.line_start)
+        if self.is_dash_item():
+            if from_object:
+                self.fail("block array under object key must not be indented", self.line_start)
+            return self.parse_block_array(expected_indent, False)
+        b = ord(self.s[self.pos])
+        if b == 34:
+            str_start = self.pos
+            fk = self.parse_string()
+            if self.pos >= self.n or ord(self.s[self.pos]) != 58:
+                self.fail("nested block cannot be a standalone scalar", str_start)
+            return self.parse_block_object(expected_indent, True, fk)
+        if _is_alpha_or_us(b):
+            return self.parse_block_object(expected_indent, False, "")
+        self.fail("nested block must be a block object or block array", self.pos)
+        return lmon_null()
+
+    def parse_block_object(self, expected_indent: int, has_fk_in: bool, first_key: str) -> LmonValue:
+        obj = lmon_object()
+        has_fk = has_fk_in
+        while True:
+            key = ""
+            if has_fk:
+                key = first_key.copy()
+                has_fk = False
+            else:
+                indent = self.peek_line()
+                if indent < expected_indent:
+                    break
+                if indent > expected_indent:
+                    self.fail("unexpected indentation inside object", self.line_start)
+                if self.is_dash_item():
+                    self.fail("cannot mix array items and object keys at same indentation", self.line_start)
+                key = self.parse_key()
+
+            if self.pos >= self.n or ord(self.s[self.pos]) != 58:
+                self.fail("expected ':' after object key", self.pos)
+            self.pos += 1
+
+            if self.pos < self.n and ord(self.s[self.pos]) == 32:
+                self.pos += 1
+                val = self.parse_inline_value()
+                self.consume_line_end(True)
+                obj.set(key, val)
+            else:
+                self.consume_line_end(False)
+                val = self.parse_nested_block(expected_indent + 1, True)
+                obj.set(key, val)
+        return obj
+
+    def parse_block_array(self, expected_indent: int, in_object: bool) -> LmonValue:
+        arr = lmon_array()
+        while True:
+            indent = self.peek_line()
+            if indent < expected_indent:
+                break
+            if indent > expected_indent:
+                self.fail("unexpected indentation inside array", self.line_start)
+            if not self.is_dash_item():
+                if in_object:
+                    break
+                self.fail("cannot mix object keys and array items at same indentation", self.line_start)
+            self.pos += 1
+
+            if self.pos < self.n and ord(self.s[self.pos]) == 32:
+                self.pos += 1
+                elem = self.parse_inline_value()
+                self.consume_line_end(True)
+                arr.push(elem)
+            else:
+                self.consume_line_end(False)
+                elem = self.parse_nested_block(expected_indent + 1, False)
+                arr.push(elem)
+        return arr
+
+    def parse_document(self) -> LmonValue:
+        if self.n >= 3 and ord(self.s[0]) == 0xEF and ord(self.s[1]) == 0xBB and ord(self.s[2]) == 0xBF:
+            self.fail("UTF-8 BOM is not allowed", 0)
+        self.line_indent = -2
+        indent = self.peek_line()
+        if indent < 0:
+            self.fail("empty LMON document", self.pos)
+        if indent != 0:
+            self.fail("root value must not be indented", self.line_start)
+
+        res = lmon_null()
+        if self.is_dash_item():
+            res = self.parse_block_array(0, False)
+        else:
+            b = ord(self.s[self.pos])
+            if b == 34:
+                first_str = self.parse_string()
+                if self.pos < self.n and ord(self.s[self.pos]) == 58:
+                    res = self.parse_block_object(0, True, first_str)
+                else:
+                    self.consume_line_end(True)
+                    res = lmon_str(first_str)
+            elif _is_alpha_or_us(b):
+                q = self.pos + 1
+                while q < self.n and _is_key_cont(ord(self.s[q])):
+                    q += 1
+                ident = self.s[self.pos:q]
+                if _is_reserved(ident) and (q >= self.n or ord(self.s[q]) != 58):
+                    res = self.parse_inline_value()
+                    self.consume_line_end(True)
+                else:
+                    res = self.parse_block_object(0, False, "")
+            else:
+                res = self.parse_inline_value()
+                self.consume_line_end(True)
+
+        trailing = self.peek_line()
+        if trailing != -1:
+            self.fail("unexpected trailing content after root value", self.line_start)
+        return res
+
+def loads(text: str) -> LmonValue:
+    p = _Parser(text.copy())
+    return p.parse_document()
+
+# --- Canonical Serializer ---
+
+def _escape_string(s: str) -> str:
+    hex_chars = "0123456789abcdef"
+    out: list[str] = ["\""]
+    start = 0
+    n = len(s)
+    i = 0
+    while i < n:
+        b = ord(s[i])
+        if b == 34 or b == 92 or b < 32:
+            if i > start:
+                out.append(s[start:i])
+            if b == 34:
+                out.append("\\\"")
+            elif b == 92:
+                out.append("\\\\")
+            elif b == 8:
+                out.append("\\b")
+            elif b == 12:
+                out.append("\\f")
+            elif b == 10:
+                out.append("\\n")
+            elif b == 13:
+                out.append("\\r")
+            elif b == 9:
+                out.append("\\t")
+            else:
+                hi = (b >> 4) & 0xF
+                lo = b & 0xF
+                out.append("\\u00" + hex_chars[hi:hi + 1] + hex_chars[lo:lo + 1])
+            start = i + 1
+        i += 1
+    if start < n:
+        out.append(s[start:n])
+    out.append("\"")
+    return "".join(out)
+
+def _is_valid_unquoted_key(k: str) -> bool:
+    if len(k) == 0 or _is_reserved(k):
+        return False
+    if not _is_alpha_or_us(ord(k[0])):
+        return False
+    for i in range(1, len(k)):
+        if not _is_key_cont(ord(k[i])):
+            return False
+    return True
+
+def _format_key(k: str) -> str:
+    if _is_valid_unquoted_key(k):
+        return k.copy()
+    return _escape_string(k)
+
+def _try_format_inline(val: LmonValue) -> str | None:
+    if val.kind == LMON_NULL:
+        return "null"
+    if val.kind == LMON_BOOL:
+        return "true" if val.bval else "false"
+    if val.kind == LMON_INT:
+        return str(val.ival)
+    if val.kind == LMON_FLOAT:
+        return str(val.fval)
+    if val.kind == LMON_STR:
+        return _escape_string(val.sval)
+    if val.kind == LMON_OBJECT:
+        return "{}" if len(val.keys) == 0 else None
+    if val.kind == LMON_ARRAY:
+        if len(val.arr) == 0:
+            return "[]"
+        parts: list[str] = []
+        byte_len = 2
+        for idx in range(len(val.arr)):
+            rendered = _try_format_inline(val.arr[idx])
+            if rendered is None:
+                return None
+            if idx > 0:
+                byte_len += 2
+            byte_len += len(rendered)
+            if byte_len > 80:
+                return None
+            parts.append(rendered)
+        return "[" + ", ".join(parts) + "]"
+    return None
+
+def _repeat_str(unit: str, count: int) -> str:
+    if count <= 0:
+        return ""
+    parts: list[str] = []
+    for _ in range(count):
+        parts.append(unit.copy())
+    return "".join(parts)
+
+def _emit_block(val: LmonValue, depth: int, unit: str, lines: list[str]) -> None:
+    prefix = _repeat_str(unit, depth)
+    if val.kind == LMON_OBJECT:
+        for i in range(len(val.keys)):
+            fkey = _format_key(val.keys[i])
+            inline = _try_format_inline(val.vals[i])
+            if inline is not None:
+                lines.append(f"{prefix}{fkey}: {inline}")
+            else:
+                lines.append(f"{prefix}{fkey}:")
+                child_depth = depth if val.vals[i].kind == LMON_ARRAY else depth + 1
+                _emit_block(val.vals[i], child_depth, unit, lines)
+    elif val.kind == LMON_ARRAY:
+        for item in val.arr:
+            inline = _try_format_inline(item)
+            if inline is not None:
+                lines.append(f"{prefix}- {inline}")
+            else:
+                lines.append(f"{prefix}-")
+                _emit_block(item, depth + 1, unit, lines)
+
+def dumps(val: LmonValue, indent: int = 4) -> str:
+    unit = _repeat_str(" ", indent if indent >= 1 else 4)
+    inline = _try_format_inline(val)
+    if inline is not None:
+        return inline + "\n"
+    lines: list[str] = []
+    _emit_block(val, 0, unit, lines)
+    return "\n".join(lines) + "\n"

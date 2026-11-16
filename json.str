@@ -1,0 +1,327 @@
+# RFC 8259 JSON parser & serializer for Stricta (sharing LmonValue DOM)
+
+import lmon
+from lmon import (
+    LmonValue,
+    LMON_NULL, LMON_BOOL, LMON_INT, LMON_FLOAT, LMON_STR, LMON_ARRAY, LMON_OBJECT,
+    lmon_null, lmon_bool, lmon_int, lmon_float, lmon_str, lmon_array, lmon_object,
+    _escape_string, _hex_digit, _utf8_encode, _is_digit, _repeat_str
+)
+
+def json_null() -> LmonValue:
+    return lmon_null()
+
+def json_bool(b: bool) -> LmonValue:
+    return lmon_bool(b)
+
+def json_int(i: int) -> LmonValue:
+    return lmon_int(i)
+
+def json_float(f: float) -> LmonValue:
+    return lmon_float(f)
+
+def json_str(s: str) -> LmonValue:
+    return lmon_str(s)
+
+def json_array() -> LmonValue:
+    return lmon_array()
+
+def json_object() -> LmonValue:
+    return lmon_object()
+
+class _JsonParser:
+    s: str
+    n: int
+    pos: int
+
+    def __init__(self, s: str) -> None:
+        self.n = len(s)
+        self.s = s
+        self.pos = 0
+
+    def fail(self, msg: str, at_pos: int) -> None:
+        line = 1
+        col = 1
+        i = 0
+        end = at_pos if at_pos < self.n else self.n
+        while i < end:
+            b = ord(self.s[i])
+            if b == 10:
+                line += 1
+                col = 1
+            elif b == 13:
+                line += 1
+                col = 1
+                if i + 1 < end and ord(self.s[i + 1]) == 10:
+                    i += 1
+            else:
+                col += 1
+            i += 1
+        raise f"JSONDecodeError: {msg}: line {line} column {col} (char {end})"
+
+    def skip_ws(self) -> None:
+        while self.pos < self.n:
+            b = ord(self.s[self.pos])
+            if b == 32 or b == 9 or b == 10 or b == 13:
+                self.pos += 1
+            else:
+                break
+
+    def parse_hex4(self, p: int) -> int:
+        if p + 4 > self.n:
+            self.fail("invalid \\uXXXX escape", p)
+        val = 0
+        for i in range(4):
+            d = _hex_digit(ord(self.s[p + i]))
+            if d < 0:
+                self.fail("invalid \\uXXXX escape", p + i)
+            val = val * 16 + d
+        return val
+
+    def parse_string(self) -> str:
+        p = self.pos
+        n = self.n
+        if p >= n or ord(self.s[p]) != 34:
+            self.fail("expected '\"'", p)
+        p += 1
+        parts: list[str] = []
+        while True:
+            if p >= n:
+                self.fail("unterminated string", p)
+            start = p
+            while p < n:
+                b = ord(self.s[p])
+                if b == 34 or b == 92 or b < 32:
+                    break
+                p += 1
+            if p > start:
+                parts.append(self.s[start:p])
+            if p >= n:
+                self.fail("unterminated string", p)
+            b = ord(self.s[p])
+            if b == 34:
+                self.pos = p + 1
+                return "".join(parts)
+            if b == 92:
+                p += 1
+                if p >= n:
+                    self.fail("unterminated escape", p)
+                eb = ord(self.s[p])
+                if eb == 34:
+                    parts.append("\"")
+                    p += 1
+                elif eb == 92:
+                    parts.append("\\")
+                    p += 1
+                elif eb == 47:
+                    parts.append("/")
+                    p += 1
+                elif eb == 98:
+                    parts.append("\b")
+                    p += 1
+                elif eb == 102:
+                    parts.append("\f")
+                    p += 1
+                elif eb == 110:
+                    parts.append("\n")
+                    p += 1
+                elif eb == 114:
+                    parts.append("\r")
+                    p += 1
+                elif eb == 116:
+                    parts.append("\t")
+                    p += 1
+                elif eb == 117:
+                    p += 1
+                    code = self.parse_hex4(p)
+                    p += 4
+                    if code >= 0xD800 and code <= 0xDBFF:
+                        if p + 6 > n or ord(self.s[p]) != 92 or ord(self.s[p + 1]) != 117:
+                            self.fail("unpaired high surrogate", p)
+                        low = self.parse_hex4(p + 2)
+                        if low < 0xDC00 or low > 0xDFFF:
+                            self.fail("invalid low surrogate", p + 2)
+                        code = 0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00)
+                        p += 6
+                    elif code >= 0xDC00 and code <= 0xDFFF:
+                        self.fail("unpaired low surrogate", p - 4)
+                    parts.append(_utf8_encode(code))
+                else:
+                    self.fail("invalid escape sequence", p - 1)
+            else:
+                self.fail("unescaped control character", p)
+
+    def parse_number(self) -> LmonValue:
+        start = self.pos
+        p = start
+        n = self.n
+        if p < n and ord(self.s[p]) == 45:
+            p += 1
+        if p >= n or not _is_digit(ord(self.s[p])):
+            self.fail("invalid number", start)
+        if ord(self.s[p]) == 48:
+            p += 1
+            if p < n and _is_digit(ord(self.s[p])):
+                self.fail("leading zero in number", p)
+        else:
+            while p < n and _is_digit(ord(self.s[p])):
+                p += 1
+        is_flt = False
+        if p < n and ord(self.s[p]) == 46:
+            is_flt = True
+            p += 1
+            if p >= n or not _is_digit(ord(self.s[p])):
+                self.fail("malformed decimal", p)
+            while p < n and _is_digit(ord(self.s[p])):
+                p += 1
+        if p < n and (ord(self.s[p]) == 101 or ord(self.s[p]) == 69):
+            is_flt = True
+            p += 1
+            if p < n and (ord(self.s[p]) == 43 or ord(self.s[p]) == 45):
+                p += 1
+            if p >= n or not _is_digit(ord(self.s[p])):
+                self.fail("malformed exponent", p)
+            while p < n and _is_digit(ord(self.s[p])):
+                p += 1
+        raw = self.s[start:p]
+        self.pos = p
+        if is_flt:
+            return lmon_float(float(raw))
+        return lmon_int(int(raw))
+
+    def parse_array(self) -> LmonValue:
+        self.pos += 1
+        self.skip_ws()
+        arr = lmon_array()
+        if self.pos < self.n and ord(self.s[self.pos]) == 93:
+            self.pos += 1
+            return arr
+        while True:
+            self.skip_ws()
+            arr.push(self.parse_value())
+            self.skip_ws()
+            if self.pos >= self.n:
+                self.fail("unterminated array", self.pos)
+            b = ord(self.s[self.pos])
+            if b == 44:
+                self.pos += 1
+            elif b == 93:
+                self.pos += 1
+                return arr
+            else:
+                self.fail("expected ',' or ']'", self.pos)
+
+    def parse_object(self) -> LmonValue:
+        self.pos += 1
+        self.skip_ws()
+        obj = lmon_object()
+        if self.pos < self.n and ord(self.s[self.pos]) == 125:
+            self.pos += 1
+            return obj
+        while True:
+            self.skip_ws()
+            if self.pos >= self.n or ord(self.s[self.pos]) != 34:
+                self.fail("expected string key", self.pos)
+            key = self.parse_string()
+            self.skip_ws()
+            if self.pos >= self.n or ord(self.s[self.pos]) != 58:
+                self.fail("expected ':'", self.pos)
+            self.pos += 1
+            self.skip_ws()
+            val = self.parse_value()
+            obj.set(key, val)
+            self.skip_ws()
+            if self.pos >= self.n:
+                self.fail("unterminated object", self.pos)
+            b = ord(self.s[self.pos])
+            if b == 44:
+                self.pos += 1
+            elif b == 125:
+                self.pos += 1
+                return obj
+            else:
+                self.fail("expected ',' or '}'", self.pos)
+
+    def parse_value(self) -> LmonValue:
+        self.skip_ws()
+        p = self.pos
+        n = self.n
+        if p >= n:
+            self.fail("unexpected end of JSON", p)
+        b = ord(self.s[p])
+        if b == 123:
+            return self.parse_object()
+        if b == 91:
+            return self.parse_array()
+        if b == 34:
+            return lmon_str(self.parse_string())
+        if b == 45 or _is_digit(b):
+            return self.parse_number()
+        if b == 116 and p + 4 <= n and self.s[p:p + 4] == "true":
+            self.pos = p + 4
+            return lmon_bool(True)
+        if b == 102 and p + 5 <= n and self.s[p:p + 5] == "false":
+            self.pos = p + 5
+            return lmon_bool(False)
+        if b == 110 and p + 4 <= n and self.s[p:p + 4] == "null":
+            self.pos = p + 4
+            return lmon_null()
+        self.fail("unexpected character", p)
+        return lmon_null()
+
+def loads(text: str) -> LmonValue:
+    if len(text) >= 3 and ord(text[0]) == 0xEF and ord(text[1]) == 0xBB and ord(text[2]) == 0xBF:
+        raise "JSONDecodeError: UTF-8 BOM is not allowed"
+    p = _JsonParser(text.copy())
+    val = p.parse_value()
+    p.skip_ws()
+    if p.pos < p.n:
+        p.fail("extra data after JSON value", p.pos)
+    return val
+
+def _dumps_val(val: LmonValue, indent: int, depth: int) -> str:
+    if val.kind == LMON_NULL:
+        return "null"
+    if val.kind == LMON_BOOL:
+        return "true" if val.bval else "false"
+    if val.kind == LMON_INT:
+        return str(val.ival)
+    if val.kind == LMON_FLOAT:
+        return str(val.fval)
+    if val.kind == LMON_STR:
+        return _escape_string(val.sval)
+    if val.kind == LMON_ARRAY:
+        if len(val.arr) == 0:
+            return "[]"
+        parts: list[str] = []
+        for item in val.arr:
+            parts.append(_dumps_val(item, indent, depth + 1))
+        if indent < 0:
+            return "[" + ",".join(parts) + "]"
+        pad = _repeat_str(" ", indent * (depth + 1))
+        close_pad = _repeat_str(" ", indent * depth)
+        lines: list[str] = []
+        for pt in parts:
+            lines.append(pad + pt)
+        return "[\n" + ",\n".join(lines) + "\n" + close_pad + "]"
+    if val.kind == LMON_OBJECT:
+        if len(val.keys) == 0:
+            return "{}"
+        pairs: list[str] = []
+        sep = ":" if indent < 0 else ": "
+        for i in range(len(val.keys)):
+            fk = _escape_string(val.keys[i])
+            fv = _dumps_val(val.vals[i], indent, depth + 1)
+            pairs.append(fk + sep + fv)
+        if indent < 0:
+            return "{" + ",".join(pairs) + "}"
+        pad = _repeat_str(" ", indent * (depth + 1))
+        close_pad = _repeat_str(" ", indent * depth)
+        lines: list[str] = []
+        for pr in pairs:
+            lines.append(pad + pr)
+        return "{\n" + ",\n".join(lines) + "\n" + close_pad + "}"
+    return "null"
+
+def dumps(val: LmonValue, indent: int = -1) -> str:
+    return _dumps_val(val, indent, 0)

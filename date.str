@@ -1,0 +1,102 @@
+@extern("stricta_time_now")
+def _d_time_now() -> float:
+    pass
+
+@extern("stricta_time_localtime")
+def _d_localtime(epoch_sec: int) -> list[str]:
+    pass
+
+def is_leap_year(year: int) -> bool:
+    return (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0)
+
+def days_in_month(year: int, month: int) -> int:
+    if month == 2:
+        return 29 if is_leap_year(year) else 28
+    if month == 4 or month == 6 or month == 9 or month == 11:
+        return 30
+    return 31
+
+def pad2(n: int) -> str:
+    s = str(n)
+    if len(s) < 2:
+        return "0" + s
+    return s
+
+def pad4(n: int) -> str:
+    s = str(n)
+    while len(s) < 4:
+        s = "0" + s
+    return s
+
+def _days_from_civil(y: int, m: int, d: int) -> int:
+    yy = y - (1 if m <= 2 else 0)
+    era = yy // 400 if yy >= 0 else (yy - 399) // 400
+    yoe = yy - era * 400
+    mm = m + (-3 if m > 2 else 9)
+    doy = (153 * mm + 2) // 5 + d - 1
+    doe = yoe * 365 + yoe // 4 - yoe // 100 + doy
+    return era * 146097 + doe - 719468
+
+def _civil_from_days(z: int) -> tuple[int, int, int]:
+    zz = z + 719468
+    era = zz // 146097 if zz >= 0 else (zz - 146096) // 146097
+    doe = zz - era * 146097
+    yoe = (doe - doe // 1460 + doe // 36524 - doe // 146096) // 365
+    y = yoe + era * 400
+    doy = doe - (365 * yoe + yoe // 4 - yoe // 100)
+    mp = (5 * doy + 2) // 153
+    d = doy - (153 * mp + 2) // 5 + 1
+    m = mp + (3 if mp < 10 else -9)
+    y = y + (1 if m <= 2 else 0)
+    return (y, m, d)
+
+class Date:
+    year: int
+    month: int
+    day: int
+
+    def __init__(self, year: int, month: int, day: int) -> None:
+        self.year = year
+        self.month = month
+        self.day = day
+
+    def copy(self) -> Date:
+        return Date(self.year, self.month, self.day)
+
+    def to_ordinal(self) -> int:
+        return _days_from_civil(self.year, self.month, self.day) + 719163
+
+    @staticmethod
+    def from_ordinal(ordinal: int) -> Date:
+        y, m, d = _civil_from_days(ordinal - 719163)
+        return Date(y, m, d)
+
+    def weekday(self) -> int:
+        # 1970-01-01 (day 0) was Thursday (weekday 3)
+        return (_days_from_civil(self.year, self.month, self.day) + 3) % 7
+
+    def add_days(self, n: int) -> Date:
+        return Date.from_ordinal(self.to_ordinal() + n)
+
+    def diff_days(self, other: Date) -> int:
+        return self.to_ordinal() - other.to_ordinal()
+
+    def isoformat(self) -> str:
+        return f"{pad4(self.year)}-{pad2(self.month)}-{pad2(self.day)}"
+
+    def __str__(self) -> str:
+        return self.isoformat()
+
+    def __eq__(self, other: Date) -> bool:
+        return self.year == other.year and self.month == other.month and self.day == other.day
+
+    def __lt__(self, other: Date) -> bool:
+        return self.to_ordinal() < other.to_ordinal()
+
+def today() -> Date:
+    parts = _d_localtime(int(_d_time_now()))
+    return Date(int(parts[0]), int(parts[1]), int(parts[2]))
+
+def from_iso(s: str) -> Date:
+    parts = s.strip().split("-")
+    return Date(int(parts[0]), int(parts[1]), int(parts[2]))

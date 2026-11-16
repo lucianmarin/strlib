@@ -1,0 +1,370 @@
+# Synchronous HTTP client library for Stricta (modeled after Python's requests)
+
+import os
+import time
+import lmon
+import json
+from lmon import LmonValue
+
+@extern("stricta_unique_id")
+def _next_uid() -> int:
+    return 0
+
+def _shell_quote(s: str) -> str:
+    return "'" + s.replace("'", "'\"'\"'") + "'"
+
+def _url_encode_component(s: str) -> str:
+    hex_chars = "0123456789ABCDEF"
+    out: list[str] = []
+    n = len(s)
+    for i in range(n):
+        ch = s[i:i + 1]
+        b = ord(ch)
+        is_unreserved = ((b >= 65 and b <= 90) or (b >= 97 and b <= 122) or
+                         (b >= 48 and b <= 57) or b == 45 or b == 95 or b == 46 or b == 126)
+        if is_unreserved:
+            out.append(ch)
+        elif b == 32:
+            out.append("+")
+        else:
+            hi = (b >> 4) & 0xF
+            lo = b & 0xF
+            out.append("%" + hex_chars[hi:hi + 1] + hex_chars[lo:lo + 1])
+    return "".join(out)
+
+def urlencode(params: dict[str, str]) -> str:
+    parts: list[str] = []
+    for k in params.keys():
+        ek = _url_encode_component(k)
+        ev = _url_encode_component(params[k])
+        parts.append(ek + "=" + ev)
+    return "&".join(parts)
+
+def _build_url(url: str, params: dict[str, str] | None) -> str:
+    if params is None or len(params) == 0:
+        return url.copy()
+    qs = urlencode(params)
+    if qs == "":
+        return url.copy()
+    sep = "&" if "?" in url else "?"
+    return url + sep + qs
+
+def _reason_for_code(code: int) -> str:
+    if code == 200:
+        return "OK"
+    if code == 201:
+        return "Created"
+    if code == 202:
+        return "Accepted"
+    if code == 204:
+        return "No Content"
+    if code == 301:
+        return "Moved Permanently"
+    if code == 302:
+        return "Found"
+    if code == 304:
+        return "Not Modified"
+    if code == 307:
+        return "Temporary Redirect"
+    if code == 308:
+        return "Permanent Redirect"
+    if code == 400:
+        return "Bad Request"
+    if code == 401:
+        return "Unauthorized"
+    if code == 403:
+        return "Forbidden"
+    if code == 404:
+        return "Not Found"
+    if code == 405:
+        return "Method Not Allowed"
+    if code == 409:
+        return "Conflict"
+    if code == 422:
+        return "Unprocessable Content"
+    if code == 429:
+        return "Too Many Requests"
+    if code == 500:
+        return "Internal Server Error"
+    if code == 502:
+        return "Bad Gateway"
+    if code == 503:
+        return "Service Unavailable"
+    if code == 504:
+        return "Gateway Timeout"
+    return ""
+
+class Response:
+    status_code: int
+    ok: bool
+    reason: str
+    url: str
+    text: str
+    headers: dict[str, str]
+
+    def __init__(self, status_code: int, reason: str, url: str, text: str, headers: dict[str, str]) -> None:
+        self.status_code = status_code
+        self.ok = status_code >= 200 and status_code < 400
+        self.reason = reason
+        self.url = url
+        self.text = text
+        self.headers = headers
+
+    def copy(self) -> Response:
+        return Response(self.status_code, self.reason.copy(), self.url.copy(), self.text.copy(), self.headers.copy())
+
+    def header(self, name: str, default: str = "") -> str:
+        low = name.lower()
+        if low in self.headers:
+            return self.headers[low].copy()
+        return default.copy()
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise f"HTTPError: {self.status_code} {self.reason} for url: {self.url}"
+
+    def lmon(self) -> LmonValue:
+        return lmon.loads(self.text)
+
+    def json(self) -> LmonValue:
+        return json.loads(self.text)
+
+def _parse_headers_file(hdr_path: str) -> tuple[int, str, dict[str, str]]:
+    hdrs: dict[str, str] = {}
+    status = 0
+    reason = ""
+    if not os.exists(hdr_path):
+        return (status, reason, hdrs)
+    raw = ""
+    with open(hdr_path, "r") as f:
+        raw = f.read()
+    # In case of redirects, curl writes multiple HTTP header blocks; keep the final block
+    for raw_line in raw.split("\n"):
+        line = raw_line.strip()
+        if line == "":
+            continue
+        if line.startswith("HTTP/"):
+            hdrs.clear()
+            parts = line.split(" ")
+            if len(parts) >= 2:
+                status = int(parts[1])
+            if len(parts) >= 3:
+                rparts: list[str] = []
+                for idx in range(2, len(parts)):
+                    rparts.append(parts[idx].copy())
+                reason = " ".join(rparts)
+            else:
+                reason = _reason_for_code(status)
+            continue
+        col = line.find(":")
+        if col > 0:
+            hk = line[:col].strip().lower()
+            hv = line[col + 1:].strip()
+            hdrs[hk] = hv
+    if reason == "" and status > 0:
+        reason = _reason_for_code(status)
+    return (status, reason, hdrs)
+
+def request(method: str, url: str, headers: dict[str, str] | None = None,
+            params: dict[str, str] | None = None, data: str | None = None,
+            timeout: float = 30.0, allow_redirects: bool = True,
+            json_data: LmonValue | None = None) -> Response:
+    full_url = _build_url(url, params)
+    stamp = time.time_ns()
+    uid = _next_uid()
+    tmp_dir = "/tmp"
+    hdr_file = f"{tmp_dir}/stricta_http_hdr_{stamp}_{uid}.txt"
+    body_file = f"{tmp_dir}/stricta_http_body_{stamp}_{uid}.txt"
+    data_file = f"{tmp_dir}/stricta_http_data_{stamp}_{uid}.txt"
+
+    cmd_parts: list[str] = ["curl", "-sS", "--max-time", str(timeout), "-D", _shell_quote(hdr_file), "-o", _shell_quote(body_file)]
+    if allow_redirects:
+        cmd_parts.append("-L")
+    m_up = method.upper()
+    if m_up == "HEAD":
+        cmd_parts.append("-I")
+    elif m_up != "GET":
+        cmd_parts.append("-X")
+        cmd_parts.append(_shell_quote(m_up))
+
+    has_ct = False
+    if headers is not None:
+        for k in headers.keys():
+            if k.lower() == "content-type":
+                has_ct = True
+            hv = headers[k]
+            cmd_parts.append("-H")
+            cmd_parts.append(_shell_quote(f"{k}: {hv}"))
+
+    wrote_data = False
+    if json_data is not None:
+        if not has_ct:
+            cmd_parts.append("-H")
+            cmd_parts.append("'Content-Type: application/json'")
+        with open(data_file, "w") as df:
+            df.write(json.dumps(json_data))
+        wrote_data = True
+        cmd_parts.append("--data-binary")
+        cmd_parts.append(_shell_quote("@" + data_file))
+    elif data is not None:
+        with open(data_file, "w") as df:
+            df.write(data)
+        wrote_data = True
+        cmd_parts.append("--data-binary")
+        cmd_parts.append(_shell_quote("@" + data_file))
+
+    cmd_parts.append("-w")
+    cmd_parts.append("'%{http_code}\\n%{url_effective}'")
+    cmd_parts.append(_shell_quote(full_url))
+    cmd = " ".join(cmd_parts) + " 2>&1"
+
+    rc, meta = os.exec(cmd)
+    if rc != 0:
+        os.remove(hdr_file)
+        os.remove(body_file)
+        if wrote_data:
+            os.remove(data_file)
+        raise f"RequestException: {meta.strip()}"
+
+    body_text = ""
+    if os.exists(body_file):
+        with open(body_file, "r") as bf:
+            body_text = bf.read()
+
+    status_code, reason, resp_headers = _parse_headers_file(hdr_file)
+    eff_url = full_url.copy()
+    meta_lines = meta.strip().split("\n")
+    if len(meta_lines) >= 2:
+        if status_code == 0:
+            status_code = int(meta_lines[len(meta_lines) - 2].strip())
+        eff_url = meta_lines[len(meta_lines) - 1].strip()
+    elif len(meta_lines) == 1 and status_code == 0 and meta_lines[0].strip() != "":
+        status_code = int(meta_lines[0].strip())
+    if reason == "" and status_code > 0:
+        reason = _reason_for_code(status_code)
+
+    os.remove(hdr_file)
+    os.remove(body_file)
+    if wrote_data:
+        os.remove(data_file)
+
+    return Response(status_code, reason, eff_url, body_text, resp_headers)
+
+def get(url: str, headers: dict[str, str] | None = None,
+        params: dict[str, str] | None = None, timeout: float = 30.0) -> Response:
+    return request("GET", url, headers, params, None, timeout, True, None)
+
+def post(url: str, data: str | None = None, headers: dict[str, str] | None = None,
+         params: dict[str, str] | None = None, timeout: float = 30.0,
+         json_data: LmonValue | None = None) -> Response:
+    return request("POST", url, headers, params, data, timeout, True, json_data)
+
+def post_json(url: str, body: LmonValue, headers: dict[str, str] | None = None,
+              params: dict[str, str] | None = None, timeout: float = 30.0) -> Response:
+    return request("POST", url, headers, params, None, timeout, True, body)
+
+def put(url: str, data: str | None = None, headers: dict[str, str] | None = None,
+        params: dict[str, str] | None = None, timeout: float = 30.0,
+        json_data: LmonValue | None = None) -> Response:
+    return request("PUT", url, headers, params, data, timeout, True, json_data)
+
+def patch(url: str, data: str | None = None, headers: dict[str, str] | None = None,
+          params: dict[str, str] | None = None, timeout: float = 30.0,
+          json_data: LmonValue | None = None) -> Response:
+    return request("PATCH", url, headers, params, data, timeout, True, json_data)
+
+def delete(url: str, headers: dict[str, str] | None = None,
+           params: dict[str, str] | None = None, timeout: float = 30.0) -> Response:
+    return request("DELETE", url, headers, params, None, timeout, True, None)
+
+def head(url: str, headers: dict[str, str] | None = None,
+         params: dict[str, str] | None = None, timeout: float = 30.0) -> Response:
+    return request("HEAD", url, headers, params, None, timeout, False, None)
+
+async def arequest(method: str, url: str, headers: dict[str, str] | None = None,
+                   params: dict[str, str] | None = None, data: str | None = None,
+                   timeout: float = 30.0, allow_redirects: bool = True,
+                   json_data: LmonValue | None = None) -> Response:
+    return request(method, url, headers, params, data, timeout, allow_redirects, json_data)
+
+async def aget(url: str, headers: dict[str, str] | None = None,
+               params: dict[str, str] | None = None, timeout: float = 30.0) -> Response:
+    return request("GET", url, headers, params, None, timeout, True, None)
+
+async def apost(url: str, data: str | None = None, headers: dict[str, str] | None = None,
+                params: dict[str, str] | None = None, timeout: float = 30.0,
+                json_data: LmonValue | None = None) -> Response:
+    return request("POST", url, headers, params, data, timeout, True, json_data)
+
+async def aput(url: str, data: str | None = None, headers: dict[str, str] | None = None,
+               params: dict[str, str] | None = None, timeout: float = 30.0,
+               json_data: LmonValue | None = None) -> Response:
+    return request("PUT", url, headers, params, data, timeout, True, json_data)
+
+async def adelete(url: str, headers: dict[str, str] | None = None,
+                  params: dict[str, str] | None = None, timeout: float = 30.0) -> Response:
+    return request("DELETE", url, headers, params, None, timeout, True, None)
+
+class Session:
+    base_url: str
+    headers: dict[str, str]
+    timeout: float
+
+    def __init__(self, base_url: str = "", timeout: float = 30.0) -> None:
+        self.base_url = base_url
+        self.headers = {}
+        self.timeout = timeout
+
+    def set_header(self, key: str, value: str) -> None:
+        self.headers[key] = value
+
+    def _resolve_url(self, url: str) -> str:
+        if self.base_url == "" or url.startswith("http://") or url.startswith("https://"):
+            return url.copy()
+        if self.base_url.endswith("/") and url.startswith("/"):
+            return self.base_url[:len(self.base_url) - 1] + url
+        if not self.base_url.endswith("/") and not url.startswith("/"):
+            return self.base_url + "/" + url
+        return self.base_url + url
+
+    def request(self, method: str, url: str, headers: dict[str, str] | None = None,
+                params: dict[str, str] | None = None, data: str | None = None,
+                timeout: float = -1.0, allow_redirects: bool = True,
+                json_data: LmonValue | None = None) -> Response:
+        merged = self.headers.copy()
+        if headers is not None:
+            for k in headers.keys():
+                merged[k.copy()] = headers[k].copy()
+        t = self.timeout if timeout < 0.0 else timeout
+        return request(method, self._resolve_url(url), merged, params, data, t, allow_redirects, json_data)
+
+    def get(self, url: str, headers: dict[str, str] | None = None,
+            params: dict[str, str] | None = None, timeout: float = -1.0) -> Response:
+        return self.request("GET", url, headers, params, None, timeout, True, None)
+
+    def post(self, url: str, data: str | None = None, headers: dict[str, str] | None = None,
+             params: dict[str, str] | None = None, timeout: float = -1.0,
+             json_data: LmonValue | None = None) -> Response:
+        return self.request("POST", url, headers, params, data, timeout, True, json_data)
+
+    def post_json(self, url: str, body: LmonValue, headers: dict[str, str] | None = None,
+                  params: dict[str, str] | None = None, timeout: float = -1.0) -> Response:
+        return self.request("POST", url, headers, params, None, timeout, True, body)
+
+    def put(self, url: str, data: str | None = None, headers: dict[str, str] | None = None,
+            params: dict[str, str] | None = None, timeout: float = -1.0,
+            json_data: LmonValue | None = None) -> Response:
+        return self.request("PUT", url, headers, params, data, timeout, True, json_data)
+
+    def patch(self, url: str, data: str | None = None, headers: dict[str, str] | None = None,
+              params: dict[str, str] | None = None, timeout: float = -1.0,
+              json_data: LmonValue | None = None) -> Response:
+        return self.request("PATCH", url, headers, params, data, timeout, True, json_data)
+
+    def delete(self, url: str, headers: dict[str, str] | None = None,
+               params: dict[str, str] | None = None, timeout: float = -1.0) -> Response:
+        return self.request("DELETE", url, headers, params, None, timeout, True, None)
+
+    def head(self, url: str, headers: dict[str, str] | None = None,
+             params: dict[str, str] | None = None, timeout: float = -1.0) -> Response:
+        return self.request("HEAD", url, headers, params, None, timeout, False, None)

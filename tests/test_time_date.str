@@ -1,0 +1,60 @@
+import time
+import date
+import datetime
+from date import Date, is_leap_year, days_in_month
+from datetime import DateTime, TimeDelta
+
+def test_time() -> None:
+    t0 = time.time()
+    assert t0 > 1700000000.0
+    m0 = time.monotonic()
+    time.sleep(0.01)
+    m1 = time.monotonic()
+    assert m1 >= m0
+    assert time.time_ns() > 1700000000000000000
+
+def test_date() -> None:
+    assert is_leap_year(2024)
+    assert not is_leap_year(2023)
+    assert is_leap_year(2000)
+    assert not is_leap_year(1900)
+    assert days_in_month(2024, 2) == 29
+    assert days_in_month(2023, 2) == 28
+
+    d = Date(2026, 11, 16)
+    assert d.isoformat() == "2026-11-16"
+    assert d.weekday() == 0 # Monday
+    d2 = d.add_days(15)
+    assert d2.isoformat() == "2026-12-01"
+    assert d2.diff_days(d) == 15
+
+    d3 = date.from_iso("2024-02-28").add_days(1)
+    assert d3.isoformat() == "2024-02-29"
+
+    td = date.today()
+    assert td.year >= 2024
+
+def test_datetime() -> None:
+    dt1 = DateTime(2026, 11, 16, 23, 50, 0)
+    assert dt1.isoformat() == "2026-11-16T23:50:00"
+    dt2 = dt1.add_seconds(900)
+    assert dt2.isoformat() == "2026-11-17T00:05:00"
+
+    td = dt2.diff(dt1)
+    assert td.days == 0 and td.seconds == 900
+    assert td.total_seconds() == 900.0
+
+    td2 = TimeDelta(1, 3600) + TimeDelta(0, 82800)
+    assert td2.days == 2 and td2.seconds == 0
+
+    n = datetime.now()
+    u = datetime.utcnow()
+    assert n.year >= 2024 and u.year >= 2024
+    ts = dt1.timestamp()
+    dt_rt = datetime.from_timestamp(ts)
+    assert dt_rt == dt1
+
+test_time()
+test_date()
+test_datetime()
+print("TIME/DATE/DATETIME TESTS PASSED")

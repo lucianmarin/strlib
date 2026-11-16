@@ -1,0 +1,12 @@
+import sys
+from sys import argv
+
+def test_sys() -> None:
+    args = sys.argv
+    assert len(args) >= 1
+    assert len(argv) == len(args)
+    assert sys.platform != ""
+    assert sys.version == "0.1.0"
+
+test_sys()
+print("SYS TESTS PASSED")

@@ -1,0 +1,185 @@
+# Regular expressions for Stricta (POSIX extended regex via @extern)
+
+IGNORECASE: int = 2
+MULTILINE: int = 4
+
+@extern("stricta_re_find")
+def _re_find(pattern: str, text: str, start_pos: int, flags: int) -> list[str]:
+    return []
+
+class Match:
+    _start: int
+    _end: int
+    _groups: list[str]
+
+    def __init__(self, start_pos: int, end_pos: int, groups: list[str]) -> None:
+        self._start = start_pos
+        self._end = end_pos
+        self._groups = groups
+
+    def copy(self) -> Match:
+        return Match(self._start, self._end, self._groups.copy())
+
+    def group(self, idx: int = 0) -> str:
+        if idx < 0 or idx >= len(self._groups):
+            raise "IndexError: no such group"
+        return self._groups[idx].copy()
+
+    def groups(self) -> list[str]:
+        out: list[str] = []
+        for i in range(1, len(self._groups)):
+            out.append(self._groups[i].copy())
+        return out
+
+    def start(self) -> int:
+        return self._start
+
+    def end(self) -> int:
+        return self._end
+
+    def span(self) -> tuple[int, int]:
+        return (self._start, self._end)
+
+def _run_find(pattern: str, text: str, pos: int, flags: int) -> Match | None:
+    raw = _re_find(pattern, text, pos, flags)
+    if len(raw) == 1 and raw[0].startswith("ERR:"):
+        raise "ValueError: invalid regex: " + raw[0][4:]
+    if len(raw) < 3:
+        return None
+    s = int(raw[0])
+    e = int(raw[1])
+    grps: list[str] = []
+    for i in range(2, len(raw)):
+        grps.append(raw[i].copy())
+    return Match(s, e, grps)
+
+class Pattern:
+    pattern: str
+    flags: int
+
+    def __init__(self, pattern: str, flags: int = 0) -> None:
+        # Validate regex upfront so compile() catches syntax errors immediately
+        _ = _run_find(pattern, "", 0, flags)
+        self.pattern = pattern
+        self.flags = flags
+
+    def copy(self) -> Pattern:
+        return Pattern(self.pattern.copy(), self.flags)
+
+    def search(self, text: str, pos: int = 0) -> Match | None:
+        return _run_find(self.pattern, text, pos, self.flags)
+
+    def match(self, text: str) -> Match | None:
+        m = _run_find(self.pattern, text, 0, self.flags)
+        if m is not None and m.start() == 0:
+            return m
+        return None
+
+    def fullmatch(self, text: str) -> Match | None:
+        m = _run_find(self.pattern, text, 0, self.flags)
+        if m is not None and m.start() == 0 and m.end() == len(text):
+            return m
+        return None
+
+    def finditer(self, text: str) -> list[Match]:
+        out: list[Match] = []
+        pos = 0
+        n = len(text)
+        while pos <= n:
+            m = _run_find(self.pattern, text, pos, self.flags)
+            if m is None:
+                break
+            e = m.end()
+            out.append(m)
+            if e == pos:
+                pos += 1
+            else:
+                pos = e
+        return out
+
+    def findall(self, text: str) -> list[str]:
+        matches = self.finditer(text)
+        out: list[str] = []
+        for m in matches:
+            grps = m.groups()
+            if len(grps) == 1:
+                out.append(grps[0].copy())
+            else:
+                out.append(m.group(0))
+        return out
+
+    def sub(self, repl: str, text: str, count: int = 0) -> str:
+        matches = self.finditer(text)
+        if len(matches) == 0:
+            return text.copy()
+        parts: list[str] = []
+        last = 0
+        done = 0
+        for m in matches:
+            if count > 0 and done >= count:
+                break
+            parts.append(text[last:m.start()])
+            parts.append(repl.copy())
+            last = m.end()
+            done += 1
+        parts.append(text[last:])
+        return "".join(parts)
+
+    def split(self, text: str, maxsplit: int = 0) -> list[str]:
+        matches = self.finditer(text)
+        out: list[str] = []
+        last = 0
+        done = 0
+        for m in matches:
+            if maxsplit > 0 and done >= maxsplit:
+                break
+            out.append(text[last:m.start()])
+            last = m.end()
+            done += 1
+        out.append(text[last:])
+        return out
+
+def compile(pattern: str, flags: int = 0) -> Pattern:
+    return Pattern(pattern, flags)
+
+def search(pattern: str, text: str, flags: int = 0) -> Match | None:
+    return _run_find(pattern, text, 0, flags)
+
+def match(pattern: str, text: str, flags: int = 0) -> Match | None:
+    m = _run_find(pattern, text, 0, flags)
+    if m is not None and m.start() == 0:
+        return m
+    return None
+
+def fullmatch(pattern: str, text: str, flags: int = 0) -> Match | None:
+    m = _run_find(pattern, text, 0, flags)
+    if m is not None and m.start() == 0 and m.end() == len(text):
+        return m
+    return None
+
+def finditer(pattern: str, text: str, flags: int = 0) -> list[Match]:
+    p = Pattern(pattern, flags)
+    return p.finditer(text)
+
+def findall(pattern: str, text: str, flags: int = 0) -> list[str]:
+    p = Pattern(pattern, flags)
+    return p.findall(text)
+
+def sub(pattern: str, repl: str, text: str, count: int = 0, flags: int = 0) -> str:
+    p = Pattern(pattern, flags)
+    return p.sub(repl, text, count)
+
+def split(pattern: str, text: str, maxsplit: int = 0, flags: int = 0) -> list[str]:
+    p = Pattern(pattern, flags)
+    return p.split(text, maxsplit)
+
+def escape(text: str) -> str:
+    special = ".^$*+?{}[]\\|()"
+    parts: list[str] = []
+    for i in range(len(text)):
+        ch = text[i:i + 1]
+        if ch in special:
+            parts.append("\\" + ch)
+        else:
+            parts.append(ch)
+    return "".join(parts)

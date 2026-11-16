@@ -1,0 +1,74 @@
+import os
+import lmon
+from lmon import LmonValue, lmon_null, lmon_bool, lmon_int, lmon_float, lmon_str, lmon_array, lmon_object
+
+def test_scalars_and_containers() -> None:
+    doc = lmon.loads("name: \"fetch\"\nversion: 1\nactive: true\nextra: null\ntags: [\"a\", \"b\"]\nempty: {}\n")
+    assert doc.is_object()
+    assert doc.get_str("name") == "fetch"
+    assert doc.get_int("version") == 1
+    assert doc.get_bool("active")
+    ev = doc.get("extra")
+    assert ev is not None and ev.is_null()
+    tv = doc.get("tags")
+    assert tv is not None and tv.is_array() and tv.len_val() == 2
+    assert tv.arr[0].as_str() == "a" and tv.arr[1].as_str() == "b"
+
+def test_gateway_and_edge_cases() -> None:
+    if os.exists("../lmon/examples/gateway.lmon"):
+        g_txt = ""
+        with open("../lmon/examples/gateway.lmon", "r") as f:
+            g_txt = f.read()
+        gw = lmon.loads(g_txt)
+        assert gw.get_str("service") == "lmon-gateway"
+        assert gw.get_int("version") == 1
+        ups = gw.get("upstreams")
+        assert ups is not None and ups.len_val() == 2
+        assert ups.arr[0].get_str("host") == "10.0.0.1"
+        assert ups.arr[1].get_int("port") == 8081
+        hdrs = gw.get("http/headers")
+        assert hdrs is not None and hdrs.get_str("200") == "OK"
+
+        # Round-trip canonical dumps -> loads
+        out = lmon.dumps(gw)
+        gw2 = lmon.loads(out)
+        assert gw2.get_str("service") == "lmon-gateway"
+        assert lmon.dumps(gw2) == out
+
+    if os.exists("../lmon/examples/edge_cases.lmon"):
+        e_txt = ""
+        with open("../lmon/examples/edge_cases.lmon", "r") as f2:
+            e_txt = f2.read()
+        ec = lmon.loads(e_txt)
+        strs = ec.get("strings")
+        assert strs is not None
+        assert strs.get_str("empty") == ""
+        assert strs.get_str("unicode_bmp").find("100%") >= 0
+        sp = ec.get("special keys")
+        assert sp is not None
+        assert sp.get_str("") == "empty key"
+        assert sp.get_int("key:with:colons") == 4
+
+def test_errors() -> None:
+    bad_cases: list[str] = [
+        "",
+        "key:\n",
+        "key: 1  \n",
+        "obj:\n\t  x: 1\n",
+        "a: {\"x\": 1}\n",
+        "a: [1, 2,]\n",
+        "true: 1\n",
+    ]
+    for bc in bad_cases:
+        failed = False
+        try:
+            v = lmon.loads(bc)
+            assert v.len_val() >= 0
+        except:
+            failed = True
+        assert failed
+
+test_scalars_and_containers()
+test_gateway_and_edge_cases()
+test_errors()
+print("LMON TESTS PASSED")

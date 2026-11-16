@@ -1,0 +1,146 @@
+import os
+import time
+import http
+import json
+from http import Response, Session
+
+def test_urlencode_and_response() -> None:
+    q: dict[str, str] = {"name": "stricta lang", "v": "1/2"}
+    enc = http.urlencode(q)
+    assert "name=stricta+lang" in enc
+    assert "v=1%2F2" in enc
+
+    r404 = Response(404, "Not Found", "http://example.com", "nope", {})
+    assert not r404.ok
+    threw = False
+    try:
+        r404.raise_for_status()
+    except:
+        threw = True
+    assert threw
+
+def test_live_local_server() -> None:
+    stamp = time.time_ns()
+    srv_py = f"/tmp/stricta_http_srv_{stamp}.py"
+    port_file = f"/tmp/stricta_http_port_{stamp}.txt"
+    py_code = (
+        "import http.server, threading, sys\n"
+        "class H(http.server.BaseHTTPRequestHandler):\n"
+        "    def log_message(self, *a): pass\n"
+        "    def do_GET(self):\n"
+        "        if self.path == '/shutdown':\n"
+        "            self.send_response(200)\n"
+        "            self.end_headers()\n"
+        "            self.wfile.write(b'bye')\n"
+        "            threading.Thread(target=self.server.shutdown, daemon=True).start()\n"
+        "            return\n"
+        "        if self.path == '/missing':\n"
+        "            self.send_response(404)\n"
+        "            self.end_headers()\n"
+        "            self.wfile.write(b'not found')\n"
+        "            return\n"
+        "        if self.path == '/json':\n"
+        "            self.send_response(200)\n"
+        "            self.send_header('Content-Type', 'application/json')\n"
+        "            self.end_headers()\n"
+        "            self.wfile.write(b'{\"lang\":\"stricta\",\"fast\":true}')\n"
+        "            return\n"
+        "        self.send_response(200)\n"
+        "        self.send_header('Content-Type', 'application/lmon')\n"
+        "        self.send_header('X-Echo', self.headers.get('X-Test', ''))\n"
+        "        self.end_headers()\n"
+        "        body = f'path: \"{self.path}\"\\nok: true\\n'.encode()\n"
+        "        self.wfile.write(body)\n"
+        "    def do_POST(self):\n"
+        "        n = int(self.headers.get('Content-Length', '0'))\n"
+        "        data = self.rfile.read(n).decode()\n"
+        "        ct = self.headers.get('Content-Type', '')\n"
+        "        self.send_response(201)\n"
+        "        self.end_headers()\n"
+        "        self.wfile.write(f'POST:{ct}:{data}'.encode())\n"
+        "    def do_HEAD(self):\n"
+        "        self.send_response(204)\n"
+        "        self.send_header('X-Head', 'yes')\n"
+        "        self.end_headers()\n"
+        "srv = http.server.HTTPServer(('127.0.0.1', 0), H)\n"
+        "with open(sys.argv[1], 'w') as pf: pf.write(str(srv.server_address[1]))\n"
+        "srv.serve_forever()\n"
+    )
+    with open(srv_py, "w") as f:
+        f.write(py_code)
+
+    rc_bg = os.system(f"python3 '{srv_py}' '{port_file}' >/dev/null 2>&1 &")
+    assert rc_bg == 0
+    for _ in range(50):
+        if os.exists(port_file):
+            break
+        time.sleep(0.02)
+    assert os.exists(port_file)
+    port = ""
+    with open(port_file, "r") as pf:
+        port = pf.read().strip()
+    base = f"http://127.0.0.1:{port}"
+
+    # 1. GET with params, headers, and LMON parsing
+    hdrs: dict[str, str] = {"X-Test": "stricta-1"}
+    prms: dict[str, str] = {"q": "hello world"}
+    r1 = http.get(base + "/items", hdrs, prms)
+    assert r1.status_code == 200 and r1.ok
+    assert r1.header("Content-Type") == "application/lmon"
+    assert r1.header("X-Echo") == "stricta-1"
+    doc = r1.lmon()
+    assert doc.get_bool("ok")
+    assert "/items?q=hello+world" in doc.get_str("path")
+
+    # 2. POST & post_json + resp.json()
+    r2 = http.post(base + "/submit", "payload=42")
+    assert r2.status_code == 201 and r2.ok
+    assert r2.text == "POST:application/x-www-form-urlencoded:payload=42"
+
+    jbody = json.json_object()
+    jbody.set("pkg", json.json_str("fetch"))
+    r2j = http.post_json(base + "/submit", jbody)
+    assert r2j.status_code == 201 and "POST:application/json:{\"pkg\":\"fetch\"}" == r2j.text
+
+    rj = http.get(base + "/json")
+    assert rj.status_code == 200
+    jdoc = rj.json()
+    assert jdoc.get_str("lang") == "stricta" and jdoc.get_bool("fast")
+
+    # 3. HEAD
+    r3 = http.head(base + "/head")
+    assert r3.status_code == 204 and r3.header("X-Head") == "yes"
+
+    # 4. 404 + raise_for_status()
+    r4 = http.get(base + "/missing")
+    assert r4.status_code == 404 and not r4.ok
+    caught = False
+    try:
+        r4.raise_for_status()
+    except:
+        caught = True
+    assert caught
+
+    # 5. Session with base_url and default headers
+    sess = Session(base.copy())
+    sess.set_header("X-Test", "sess-ok")
+    r5 = sess.get("/sess")
+    assert r5.status_code == 200 and r5.header("X-Echo") == "sess-ok"
+
+    # 6. Concurrent async GET & POST with keyword args
+    ta = http.aget(base + "/json", timeout=5.0)
+    tb = http.apost(base + "/submit", data="async=yes", timeout=5.0)
+    ra = await ta
+    rb = await tb
+    assert ra.status_code == 200 and ra.json().get_str("lang") == "stricta"
+    assert rb.status_code == 201 and "async=yes" in rb.text
+
+    # Shutdown local server and clean temp files
+    r_shut = http.get(base + "/shutdown")
+    assert r_shut.status_code == 200
+    os.remove(srv_py)
+    os.remove(port_file)
+
+test_urlencode_and_response()
+test_live_local_server()
+print("HTTP TESTS PASSED")

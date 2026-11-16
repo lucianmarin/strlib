@@ -1,0 +1,102 @@
+@extern("stricta_os_exec_list")
+def _os_exec_list(cmd: str) -> list[str]:
+    pass
+
+@extern("stricta_os_system")
+def system(cmd: str) -> int:
+    pass
+
+@extern("stricta_os_exists")
+def _os_exists(path: str) -> int:
+    pass
+
+@extern("stricta_os_isdir")
+def _os_isdir(path: str) -> int:
+    pass
+
+@extern("stricta_os_mkdir")
+def _os_mkdir(path: str) -> int:
+    pass
+
+@extern("stricta_os_listdir")
+def listdir(path: str) -> list[str]:
+    pass
+
+@extern("stricta_os_getenv")
+def getenv(name: str) -> str:
+    pass
+
+@extern("stricta_os_getcwd")
+def getcwd() -> str:
+    pass
+
+@extern("stricta_os_remove")
+def _os_remove(path: str) -> int:
+    pass
+
+@extern("stricta_os_symlink")
+def _os_symlink(target: str, linkpath: str) -> int:
+    pass
+
+def exec(cmd: str) -> tuple[int, str]:
+    res = _os_exec_list(cmd)
+    return (int(res[0]), res[1].copy())
+
+def exists(path: str) -> bool:
+    return _os_exists(path) != 0
+
+def isdir(path: str) -> bool:
+    return _os_isdir(path) != 0
+
+def remove(path: str) -> bool:
+    return _os_remove(path) != 0
+
+def symlink(target: str, linkpath: str) -> bool:
+    return _os_symlink(target, linkpath) != 0
+
+def mkdir_p(path: str) -> bool:
+    if len(path) == 0:
+        return False
+    cur = "/" if path.startswith("/") else ""
+    for part in path.split("/"):
+        if part == "" or part == ".":
+            continue
+        if cur == "" or cur == "/":
+            cur = cur + part
+        else:
+            cur = cur + "/" + part
+        if _os_mkdir(cur) == 0:
+            return False
+    return True
+
+def path_join(a: str, b: str) -> str:
+    if b.startswith("/") or a == "":
+        return b.copy()
+    if a.endswith("/"):
+        return a + b
+    return a + "/" + b
+
+def basename(path: str) -> str:
+    p = path.strip()
+    if p == "/":
+        return "/"
+    while len(p) > 1 and p.endswith("/"):
+        p = p[:len(p) - 1]
+    parts = p.split("/")
+    return parts[len(parts) - 1].copy()
+
+def dirname(path: str) -> str:
+    p = path.strip()
+    if p == "/":
+        return "/"
+    while len(p) > 1 and p.endswith("/"):
+        p = p[:len(p) - 1]
+    parts = p.split("/")
+    if len(parts) <= 1:
+        return "."
+    if len(parts) == 2 and parts[0] == "":
+        return "/"
+    kept: list[str] = []
+    for i in range(len(parts) - 1):
+        kept.append(parts[i].copy())
+    return "/".join(kept)

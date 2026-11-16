@@ -1,0 +1,40 @@
+import os
+from os import exists, isdir
+
+def test_os_primitives() -> None:
+    cwd = os.getcwd()
+    assert len(cwd) > 0
+    assert isdir(cwd)
+    assert exists("Makefile")
+
+    tmp = "/tmp/stricta_os_test_dir/sub"
+    assert os.mkdir_p(tmp)
+    assert isdir(tmp)
+
+    rc, out = os.exec("echo stricta_ok")
+    assert rc == 0
+    assert out.strip() == "stricta_ok"
+
+    rc2 = os.system("true")
+    assert rc2 == 0
+
+    with open(tmp + "/hello.txt", "w") as f:
+        f.write("world")
+    assert exists(tmp + "/hello.txt")
+
+    entries = os.listdir(tmp)
+    assert len(entries) == 1
+    assert entries[0] == "hello.txt"
+
+    assert os.remove(tmp + "/hello.txt")
+    assert not exists(tmp + "/hello.txt")
+    rc3, _ = os.exec("rm -rf /tmp/stricta_os_test_dir")
+    assert rc3 == 0
+
+    path_env = os.getenv("PATH")
+    assert len(path_env) > 0
+    missing_env = os.getenv("STRICTA_NONEXISTENT_VAR_XYZ")
+    assert missing_env == ""
+
+test_os_primitives()
+print("OS TESTS PASSED")

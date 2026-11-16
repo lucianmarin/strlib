@@ -1,0 +1,51 @@
+import json
+import lmon
+from json import json_object, json_array, json_str, json_int, json_bool, json_null
+
+def test_json_roundtrip() -> None:
+    raw = "{\"name\":\"stricta\",\"version\":1,\"ok\":true,\"extra\":null,\"nums\":[1,2,3],\"nested\":{\"emoji\":\"\\uD83C\\uDF4B\"}}"
+    doc = json.loads(raw)
+    assert doc.is_object()
+    assert doc.get_str("name") == "stricta"
+    assert doc.get_int("version") == 1
+    assert doc.get_bool("ok")
+    ev = doc.get("extra")
+    assert ev is not None and ev.is_null()
+    nums = doc.get("nums")
+    assert nums is not None and nums.len_val() == 3
+    assert nums.arr[2].as_int() == 3
+
+    compact = json.dumps(doc)
+    doc2 = json.loads(compact)
+    assert doc2.get_str("name") == "stricta"
+    assert json.dumps(doc2) == compact
+
+    pretty = json.dumps(doc, 2)
+    assert "\n  \"name\": \"stricta\"" in pretty
+    assert json.loads(pretty).get_int("version") == 1
+
+    # Direct interoperability with LMON
+    lmon_txt = lmon.dumps(doc)
+    assert lmon.loads(lmon_txt).get_str("name") == "stricta"
+
+def test_json_errors() -> None:
+    bad: list[str] = [
+        "",
+        "{\"a\": 1,}",
+        "[1, 2,]",
+        "01",
+        "{\"a\": 1} trailing",
+        "\"unterminated",
+    ]
+    for s in bad:
+        threw = False
+        try:
+            v = json.loads(s)
+            assert v.len_val() >= 0
+        except:
+            threw = True
+        assert threw
+
+test_json_roundtrip()
+test_json_errors()
+print("JSON TESTS PASSED")

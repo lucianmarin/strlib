@@ -1,0 +1,17 @@
+@extern("stricta_time_now")
+def time() -> float:
+    pass
+
+@extern("stricta_time_monotonic")
+def monotonic() -> float:
+    pass
+
+@extern("stricta_time_sleep")
+def sleep(secs: float) -> None:
+    pass
+
+def perf_counter() -> float:
+    return monotonic()
+
+def time_ns() -> int:
+    return int(time() * 1000000000.0)

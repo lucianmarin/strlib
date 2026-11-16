@@ -1,0 +1,25 @@
+import os
+import time
+import path
+from path import Path
+
+p = Path("/tmp/stricta_test_dir/sub/hello.tar.gz")
+assert p.name() == "hello.tar.gz"
+assert p.suffix() == ".gz"
+assert p.stem() == "hello.tar"
+assert str(p.parent()) == "/tmp/stricta_test_dir/sub"
+
+base = Path(f"/tmp/stricta_path_test_{time.time_ns()}")
+assert base.mkdir()
+f = base.join("note.txt")
+f.write_text("stricta path!")
+assert f.exists() and f.is_file() and not f.is_dir()
+assert f.read_text() == "stricta path!"
+
+entries = base.iterdir()
+assert len(entries) == 1 and entries[0].name() == "note.txt"
+assert f.remove()
+assert os.system(f"rmdir '{str(base)}'") == 0
+
+assert path.cwd().exists()
+print("PATH TESTS PASSED")

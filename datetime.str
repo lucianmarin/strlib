@@ -1,0 +1,116 @@
+from date import Date, pad2, pad4
+
+@extern("stricta_time_now")
+def _dt_time_now() -> float:
+    pass
+
+@extern("stricta_time_localtime")
+def _dt_localtime(epoch_sec: int) -> list[str]:
+    pass
+
+@extern("stricta_time_gmtime")
+def _dt_gmtime(epoch_sec: int) -> list[str]:
+    pass
+
+@extern("stricta_time_mktime")
+def _dt_mktime(y: int, m: int, d: int, H: int, M: int, S: int) -> int:
+    pass
+
+class TimeDelta:
+    days: int
+    seconds: int
+
+    def __init__(self, days: int, seconds: int = 0) -> None:
+        extra_days = seconds // 86400
+        rem = seconds % 86400
+        if rem < 0:
+            rem += 86400
+            extra_days -= 1
+        self.days = days + extra_days
+        self.seconds = rem
+
+    def copy(self) -> TimeDelta:
+        return TimeDelta(self.days, self.seconds)
+
+    def total_seconds(self) -> float:
+        return float(self.days * 86400 + self.seconds)
+
+    def __add__(self, other: TimeDelta) -> TimeDelta:
+        return TimeDelta(self.days + other.days, self.seconds + other.seconds)
+
+    def __sub__(self, other: TimeDelta) -> TimeDelta:
+        return TimeDelta(self.days - other.days, self.seconds - other.seconds)
+
+    def __eq__(self, other: TimeDelta) -> bool:
+        return self.days == other.days and self.seconds == other.seconds
+
+    def __str__(self) -> str:
+        h = self.seconds // 3600
+        m = (self.seconds % 3600) // 60
+        s = self.seconds % 60
+        if self.days != 0:
+            return f"{self.days} days, {h}:{pad2(m)}:{pad2(s)}"
+        return f"{h}:{pad2(m)}:{pad2(s)}"
+
+class DateTime:
+    year: int
+    month: int
+    day: int
+    hour: int
+    minute: int
+    second: int
+
+    def __init__(self, year: int, month: int, day: int, hour: int = 0, minute: int = 0, second: int = 0) -> None:
+        self.year = year
+        self.month = month
+        self.day = day
+        self.hour = hour
+        self.minute = minute
+        self.second = second
+
+    def copy(self) -> DateTime:
+        return DateTime(self.year, self.month, self.day, self.hour, self.minute, self.second)
+
+    def date(self) -> Date:
+        return Date(self.year, self.month, self.day)
+
+    def timestamp(self) -> float:
+        return float(_dt_mktime(self.year, self.month, self.day, self.hour, self.minute, self.second))
+
+    def isoformat(self) -> str:
+        return f"{pad4(self.year)}-{pad2(self.month)}-{pad2(self.day)}T{pad2(self.hour)}:{pad2(self.minute)}:{pad2(self.second)}"
+
+    def __str__(self) -> str:
+        return self.isoformat()
+
+    def __eq__(self, other: DateTime) -> bool:
+        return (self.year == other.year and self.month == other.month and self.day == other.day and
+                self.hour == other.hour and self.minute == other.minute and self.second == other.second)
+
+    def add_seconds(self, delta: int) -> DateTime:
+        tot = self.hour * 3600 + self.minute * 60 + self.second + delta
+        day_off = tot // 86400
+        rem = tot % 86400
+        if rem < 0:
+            rem += 86400
+            day_off -= 1
+        d = self.date().add_days(day_off)
+        return DateTime(d.year, d.month, d.day, rem // 3600, (rem % 3600) // 60, rem % 60)
+
+    def diff(self, other: DateTime) -> TimeDelta:
+        d_diff = self.date().diff_days(other.date())
+        s1 = self.hour * 3600 + self.minute * 60 + self.second
+        s2 = other.hour * 3600 + other.minute * 60 + other.second
+        return TimeDelta(d_diff, s1 - s2)
+
+def now() -> DateTime:
+    parts = _dt_localtime(int(_dt_time_now()))
+    return DateTime(int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3]), int(parts[4]), int(parts[5]))
+
+def utcnow() -> DateTime:
+    parts = _dt_gmtime(int(_dt_time_now()))
+    return DateTime(int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3]), int(parts[4]), int(parts[5]))
+
+def from_timestamp(ts: float) -> DateTime:
+    parts = _dt_localtime(int(ts))
+    return DateTime(int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3]), int(parts[4]), int(parts[5]))

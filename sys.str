@@ -1,0 +1,18 @@
+@extern("stricta_sys_get_argv")
+def _sys_get_argv() -> list[str]:
+    pass
+
+@extern("stricta_sys_exit")
+def _sys_exit(code: int) -> None:
+    pass
+
+@extern("stricta_sys_platform")
+def _sys_platform() -> str:
+    pass
+
+argv: list[str] = _sys_get_argv()
+platform: str = _sys_platform()
+version: str = "0.1.0"
+
+def exit(code: int = 0) -> None:
+    _sys_exit(code)
