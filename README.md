@@ -21,7 +21,7 @@ Standard library for the **Stricta** programming language, written in Stricta us
 fetch add lucianmarin/strlib
 ```
 ```python
-from lucianmarin/strlib import os, sys, datetime
+from strlib import os, sys, datetime
 ```
 
 ## Test
