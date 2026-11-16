@@ -162,6 +162,8 @@ def lcm(a: int, b: int) -> int:
 def factorial(n: int) -> int:
     if n < 0:
         raise "ValueError: factorial() not defined for negative values"
+    if n > 20:
+        raise "OverflowError: factorial() argument exceeds 64-bit integer range (max 20)"
     res = 1
     for i in range(2, n + 1):
         res *= i

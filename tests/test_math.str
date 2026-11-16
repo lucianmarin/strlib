@@ -23,6 +23,13 @@ assert math.isfinite(42.0)
 assert math.gcd(48, 18) == 6
 assert math.lcm(12, 18) == 36
 assert math.factorial(6) == 720
+assert math.factorial(20) == 2432902008176640000
+ovf = False
+try:
+    _ = math.factorial(21)
+except:
+    ovf = True
+assert ovf
 assert math.isclose(math.clamp(15.0, 0.0, 10.0), 10.0)
 assert math.isclose(math.clamp(-5.0, 0.0, 10.0), 0.0)
 

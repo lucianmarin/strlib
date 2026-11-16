@@ -34,7 +34,28 @@ def test_date() -> None:
     td = date.today()
     assert td.year >= 2024
 
+    bad_d = False
+    try:
+        _ = Date(2023, 2, 29)
+    except:
+        bad_d = True
+    assert bad_d
+
+    bad_iso = False
+    try:
+        _ = date.from_iso("2026-11")
+    except:
+        bad_iso = True
+    assert bad_iso
+
 def test_datetime() -> None:
+    bad_dt = False
+    try:
+        _ = DateTime(2026, 11, 16, 25, 0, 0)
+    except:
+        bad_dt = True
+    assert bad_dt
+
     dt1 = DateTime(2026, 11, 16, 23, 50, 0)
     assert dt1.isoformat() == "2026-11-16T23:50:00"
     dt2 = dt1.add_seconds(900)

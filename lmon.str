@@ -112,6 +112,12 @@ class LmonValue:
                 return self.vals[i].ival
         return default
 
+    def get_float(self, key: str, default: float = 0.0) -> float:
+        for i in range(len(self.keys)):
+            if self.keys[i] == key:
+                return self.vals[i].as_float(default)
+        return default
+
     def get_bool(self, key: str, default: bool = False) -> bool:
         for i in range(len(self.keys)):
             if self.keys[i] == key and self.vals[i].kind == LMON_BOOL:

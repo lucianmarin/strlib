@@ -56,7 +56,7 @@ class Path:
     def mkdir(self, parents: bool = True) -> bool:
         if parents:
             return os.mkdir_p(self._path)
-        return os.mkdir_p(self._path)
+        return os.mkdir(self._path)
 
     def read_text(self) -> str:
         with open(self._path, "r") as f:

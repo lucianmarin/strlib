@@ -54,6 +54,9 @@ def remove(path: str) -> bool:
 def symlink(target: str, linkpath: str) -> bool:
     return _os_symlink(target, linkpath) != 0
 
+def mkdir(path: str) -> bool:
+    return _os_mkdir(path) != 0
+
 def mkdir_p(path: str) -> bool:
     if len(path) == 0:
         return False

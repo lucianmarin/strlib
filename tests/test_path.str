@@ -10,6 +10,7 @@ assert p.stem() == "hello.tar"
 assert str(p.parent()) == "/tmp/stricta_test_dir/sub"
 
 base = Path(f"/tmp/stricta_path_test_{time.time_ns()}")
+assert not base.join("a/b").mkdir(parents=False)
 assert base.mkdir()
 f = base.join("note.txt")
 f.write_text("stricta path!")

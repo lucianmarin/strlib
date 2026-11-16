@@ -61,6 +61,13 @@ class DateTime:
     second: int
 
     def __init__(self, year: int, month: int, day: int, hour: int = 0, minute: int = 0, second: int = 0) -> None:
+        _ = Date(year, month, day)
+        if hour < 0 or hour > 23:
+            raise f"ValueError: hour must be in 0..23, got {hour}"
+        if minute < 0 or minute > 59:
+            raise f"ValueError: minute must be in 0..59, got {minute}"
+        if second < 0 or second > 59:
+            raise f"ValueError: second must be in 0..59, got {second}"
         self.year = year
         self.month = month
         self.day = day

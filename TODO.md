@@ -4,11 +4,11 @@ Planned improvements, strictness fixes, and new standard library modules for `..
 
 ## Strictness & Fixes (Existing Modules)
 
-- [ ] `path.str` — honor `parents=False` in `Path.mkdir(parents=True)` using single-level `_os_mkdir` instead of always calling `os.mkdir_p`
-- [ ] `date.str` — validate `month` (`1..12`) and `day` (`1..days_in_month`) in `Date.__init__`, and check `len(parts) == 3` in `from_iso()`
-- [ ] `datetime.str` — validate `hour` (`0..23`), `minute` (`0..59`), and `second` (`0..59`) in `DateTime.__init__`
-- [ ] `math.str` — guard `factorial(n)` against `i64` overflow (`n > 20`)
-- [ ] `lmon.str` — add `LmonValue.get_float(key, default=0.0)` for parity with `get_str` / `get_int` / `get_bool`
+- [x] `path.str` — honor `parents=False` in `Path.mkdir(parents=True)` using single-level `_os_mkdir` instead of always calling `os.mkdir_p`
+- [x] `date.str` — validate `month` (`1..12`) and `day` (`1..days_in_month`) in `Date.__init__`, and check `len(parts) == 3` in `from_iso()`
+- [x] `datetime.str` — validate `hour` (`0..23`), `minute` (`0..59`), and `second` (`0..59`) in `DateTime.__init__`
+- [x] `math.str` — guard `factorial(n)` against `i64` overflow (`n > 20`)
+- [x] `lmon.str` — add `LmonValue.get_float(key, default=0.0)` for parity with `get_str` / `get_int` / `get_bool`
 
 ## New Modules
 
