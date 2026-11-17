@@ -100,6 +100,24 @@ class LmonValue:
                 return self.vals[i].copy()
         return None
 
+    def get_ref(self, key: str) -> ref[LmonValue] | None:
+        for i in range(len(self.keys)):
+            if self.keys[i] == key:
+                return self.vals[i].ref
+        return None
+
+    def get_mut(self, key: str) -> mut_ref[LmonValue] | None:
+        for i in range(len(self.keys)):
+            if self.keys[i] == key:
+                return self.vals[i].mut_ref
+        return None
+
+    def at(self, idx: int) -> ref[LmonValue]:
+        return self.arr[idx].ref
+
+    def at_mut(self, idx: int) -> mut_ref[LmonValue]:
+        return self.arr[idx].mut_ref
+
     def get_str(self, key: str, default: str = "") -> str:
         for i in range(len(self.keys)):
             if self.keys[i] == key and self.vals[i].kind == LMON_STR:
@@ -203,6 +221,7 @@ def _utf8_encode(cp: int) -> str:
 
 class _Parser:
     s: str
+    buf: addr[u8]
     n: int
     pos: int
     line_indent: int
@@ -212,6 +231,7 @@ class _Parser:
 
     def __init__(self, s: str) -> None:
         self.n = len(s)
+        self.buf = s.bin
         self.s = s
         self.pos = 0
         self.line_indent = -2
@@ -225,14 +245,14 @@ class _Parser:
         i = 0
         end = at_pos if at_pos < self.n else self.n
         while i < end:
-            b = ord(self.s[i])
+            b = int(self.buf[i])
             if b == 10:
                 line += 1
                 col = 1
             elif b == 13:
                 line += 1
                 col = 1
-                if i + 1 < end and ord(self.s[i + 1]) == 10:
+                if i + 1 < end and int(self.buf[i + 1]) == 10:
                     i += 1
             else:
                 col += 1
@@ -247,36 +267,36 @@ class _Parser:
         n = self.n
         while p < n:
             line_begin = p
-            fb = ord(self.s[p])
+            fb = int(self.buf[p])
 
             if fb == 32:
-                while p < n and ord(self.s[p]) == 32:
+                while p < n and int(self.buf[p]) == 32:
                     p += 1
                 if p >= n:
                     self.pos = p
                     self.line_indent = -1
                     return -1
-                cb = ord(self.s[p])
+                cb = int(self.buf[p])
                 if cb == 10:
                     p += 1
                     continue
                 if cb == 13:
-                    p += 2 if (p + 1 < n and ord(self.s[p + 1]) == 10) else 1
+                    p += 2 if (p + 1 < n and int(self.buf[p + 1]) == 10) else 1
                     continue
                 if cb == 9:
                     q = p + 1
-                    while q < n and (ord(self.s[q]) == 32 or ord(self.s[q]) == 9):
+                    while q < n and (int(self.buf[q]) == 32 or int(self.buf[q]) == 9):
                         q += 1
                     if q >= n:
                         self.pos = q
                         self.line_indent = -1
                         return -1
-                    qb = ord(self.s[q])
+                    qb = int(self.buf[q])
                     if qb == 10:
                         p = q + 1
                         continue
                     if qb == 13:
-                        p = (q + 2) if (q + 1 < n and ord(self.s[q + 1]) == 10) else (q + 1)
+                        p = (q + 2) if (q + 1 < n and int(self.buf[q + 1]) == 10) else (q + 1)
                         continue
                     self.fail("mixed spaces and tabs in indentation", p)
                 cnt = p - line_begin
@@ -298,33 +318,33 @@ class _Parser:
                 return level
 
             if fb == 9:
-                while p < n and ord(self.s[p]) == 9:
+                while p < n and int(self.buf[p]) == 9:
                     p += 1
                 if p >= n:
                     self.pos = p
                     self.line_indent = -1
                     return -1
-                cb = ord(self.s[p])
+                cb = int(self.buf[p])
                 if cb == 10:
                     p += 1
                     continue
                 if cb == 13:
-                    p += 2 if (p + 1 < n and ord(self.s[p + 1]) == 10) else 1
+                    p += 2 if (p + 1 < n and int(self.buf[p + 1]) == 10) else 1
                     continue
                 if cb == 32:
                     q = p + 1
-                    while q < n and (ord(self.s[q]) == 32 or ord(self.s[q]) == 9):
+                    while q < n and (int(self.buf[q]) == 32 or int(self.buf[q]) == 9):
                         q += 1
                     if q >= n:
                         self.pos = q
                         self.line_indent = -1
                         return -1
-                    qb = ord(self.s[q])
+                    qb = int(self.buf[q])
                     if qb == 10:
                         p = q + 1
                         continue
                     if qb == 13:
-                        p = (q + 2) if (q + 1 < n and ord(self.s[q + 1]) == 10) else (q + 1)
+                        p = (q + 2) if (q + 1 < n and int(self.buf[q + 1]) == 10) else (q + 1)
                         continue
                     self.fail("mixed tabs and spaces in indentation", p)
                 cnt = p - line_begin
@@ -349,7 +369,7 @@ class _Parser:
                 p += 1
                 continue
             if fb == 13:
-                p += 2 if (p + 1 < n and ord(self.s[p + 1]) == 10) else 1
+                p += 2 if (p + 1 < n and int(self.buf[p + 1]) == 10) else 1
                 continue
 
             self.pos = p
@@ -369,13 +389,13 @@ class _Parser:
                 self.fail("unexpected end of input; expected nested block", p)
             self.line_indent = -1
             return
-        b = ord(self.s[p])
+        b = int(self.buf[p])
         if b == 10:
             self.pos = p + 1
             self.line_indent = -2
             return
         if b == 13:
-            self.pos = (p + 2) if (p + 1 < n and ord(self.s[p + 1]) == 10) else (p + 1)
+            self.pos = (p + 2) if (p + 1 < n and int(self.buf[p + 1]) == 10) else (p + 1)
             self.line_indent = -2
             return
         if b == 9:
@@ -389,7 +409,7 @@ class _Parser:
             self.fail("invalid \\uXXXX escape sequence", p)
         val = 0
         for i in range(4):
-            d = _hex_digit(ord(self.s[p + i]))
+            d = _hex_digit(int(self.buf[p + i]))
             if d < 0:
                 self.fail("invalid \\uXXXX escape sequence", p + i)
             val = val * 16 + d
@@ -398,7 +418,7 @@ class _Parser:
     def parse_string(self) -> str:
         p = self.pos
         n = self.n
-        if p >= n or ord(self.s[p]) != 34:
+        if p >= n or int(self.buf[p]) != 34:
             self.fail("expected '\"'", p)
         p += 1
         parts: list[str] = []
@@ -407,7 +427,7 @@ class _Parser:
                 self.fail("unterminated string literal", p)
             start = p
             while p < n:
-                b = ord(self.s[p])
+                b = int(self.buf[p])
                 if b == 34 or b == 92 or b < 32:
                     break
                 p += 1
@@ -415,7 +435,7 @@ class _Parser:
                 parts.append(self.s[start:p])
             if p >= n:
                 self.fail("unterminated string literal", p)
-            b = ord(self.s[p])
+            b = int(self.buf[p])
             if b == 34:
                 self.pos = p + 1
                 return "".join(parts)
@@ -423,7 +443,7 @@ class _Parser:
                 p += 1
                 if p >= n:
                     self.fail("unterminated escape sequence", p)
-                eb = ord(self.s[p])
+                eb = int(self.buf[p])
                 if eb == 34:
                     parts.append("\"")
                     p += 1
@@ -453,7 +473,7 @@ class _Parser:
                     code = self.parse_hex4(p)
                     p += 4
                     if code >= 0xD800 and code <= 0xDBFF:
-                        if p + 6 > n or ord(self.s[p]) != 92 or ord(self.s[p + 1]) != 117:
+                        if p + 6 > n or int(self.buf[p]) != 92 or int(self.buf[p + 1]) != 117:
                             self.fail("unpaired high surrogate in string", p)
                         low = self.parse_hex4(p + 2)
                         if low < 0xDC00 or low > 0xDFFF:
@@ -472,36 +492,36 @@ class _Parser:
         start = self.pos
         p = start
         n = self.n
-        if p < n and ord(self.s[p]) == 45:
+        if p < n and int(self.buf[p]) == 45:
             p += 1
-        if p >= n or not _is_digit(ord(self.s[p])):
+        if p >= n or not _is_digit(int(self.buf[p])):
             self.fail("invalid number literal", start)
-        if ord(self.s[p]) == 48:
+        if int(self.buf[p]) == 48:
             p += 1
-            if p < n and _is_digit(ord(self.s[p])):
+            if p < n and _is_digit(int(self.buf[p])):
                 self.fail("leading zero in number literal", p)
         else:
-            while p < n and _is_digit(ord(self.s[p])):
+            while p < n and _is_digit(int(self.buf[p])):
                 p += 1
         is_flt = False
-        if p < n and ord(self.s[p]) == 46:
+        if p < n and int(self.buf[p]) == 46:
             is_flt = True
             p += 1
-            if p >= n or not _is_digit(ord(self.s[p])):
+            if p >= n or not _is_digit(int(self.buf[p])):
                 self.fail("malformed decimal number", p)
-            while p < n and _is_digit(ord(self.s[p])):
+            while p < n and _is_digit(int(self.buf[p])):
                 p += 1
-        if p < n and (ord(self.s[p]) == 101 or ord(self.s[p]) == 69):
+        if p < n and (int(self.buf[p]) == 101 or int(self.buf[p]) == 69):
             is_flt = True
             p += 1
-            if p < n and (ord(self.s[p]) == 43 or ord(self.s[p]) == 45):
+            if p < n and (int(self.buf[p]) == 43 or int(self.buf[p]) == 45):
                 p += 1
-            if p >= n or not _is_digit(ord(self.s[p])):
+            if p >= n or not _is_digit(int(self.buf[p])):
                 self.fail("malformed exponent in number", p)
-            while p < n and _is_digit(ord(self.s[p])):
+            while p < n and _is_digit(int(self.buf[p])):
                 p += 1
         if p < n:
-            tb = ord(self.s[p])
+            tb = int(self.buf[p])
             if _is_digit(tb) or tb == 46 or tb == 101 or tb == 69 or tb == 43 or tb == 45:
                 self.fail("malformed number literal", p)
         raw = self.s[start:p]
@@ -512,24 +532,24 @@ class _Parser:
 
     def parse_inline_array(self) -> LmonValue:
         self.pos += 1
-        while self.pos < self.n and ord(self.s[self.pos]) == 32:
+        while self.pos < self.n and int(self.buf[self.pos]) == 32:
             self.pos += 1
-        if self.pos < self.n and ord(self.s[self.pos]) == 93:
+        if self.pos < self.n and int(self.buf[self.pos]) == 93:
             self.pos += 1
             return lmon_array()
         arr = lmon_array()
         while True:
             arr.push(self.parse_inline_value())
-            while self.pos < self.n and ord(self.s[self.pos]) == 32:
+            while self.pos < self.n and int(self.buf[self.pos]) == 32:
                 self.pos += 1
             if self.pos >= self.n:
                 self.fail("unterminated inline array", self.pos)
-            b = ord(self.s[self.pos])
+            b = int(self.buf[self.pos])
             if b == 44:
                 self.pos += 1
-                while self.pos < self.n and ord(self.s[self.pos]) == 32:
+                while self.pos < self.n and int(self.buf[self.pos]) == 32:
                     self.pos += 1
-                if self.pos < self.n and ord(self.s[self.pos]) == 93:
+                if self.pos < self.n and int(self.buf[self.pos]) == 93:
                     self.fail("trailing comma in inline array", self.pos)
             elif b == 93:
                 self.pos += 1
@@ -544,7 +564,7 @@ class _Parser:
         n = self.n
         if p >= n:
             self.fail("expected value", p)
-        b = ord(self.s[p])
+        b = int(self.buf[p])
         if b == 34:
             return lmon_str(self.parse_string())
         if b == 45 or _is_digit(b):
@@ -567,7 +587,7 @@ class _Parser:
         if b == 91:
             return self.parse_inline_array()
         if b == 123:
-            if p + 1 < n and ord(self.s[p + 1]) == 125:
+            if p + 1 < n and int(self.buf[p + 1]) == 125:
                 self.pos = p + 2
                 return lmon_object()
             self.fail("curly-brace objects are not allowed in LMON; use indentation or '{}'", p)
@@ -576,12 +596,12 @@ class _Parser:
 
     def parse_key(self) -> str:
         p = self.pos
-        if p < self.n and ord(self.s[p]) == 34:
+        if p < self.n and int(self.buf[p]) == 34:
             return self.parse_string()
-        if p >= self.n or not _is_alpha_or_us(ord(self.s[p])):
+        if p >= self.n or not _is_alpha_or_us(int(self.buf[p])):
             self.fail("expected object key", p)
         q = p + 1
-        while q < self.n and _is_key_cont(ord(self.s[q])):
+        while q < self.n and _is_key_cont(int(self.buf[q])):
             q += 1
         key = self.s[p:q]
         if _is_reserved(key):
@@ -591,11 +611,11 @@ class _Parser:
 
     def is_dash_item(self) -> bool:
         p = self.pos
-        if p >= self.n or ord(self.s[p]) != 45:
+        if p >= self.n or int(self.buf[p]) != 45:
             return False
         if p + 1 >= self.n:
             return True
-        nb = ord(self.s[p + 1])
+        nb = int(self.buf[p + 1])
         return nb == 32 or nb == 10 or nb == 13
 
     def parse_nested_block(self, expected_indent: int, from_object: bool) -> LmonValue:
@@ -610,11 +630,11 @@ class _Parser:
             if from_object:
                 self.fail("block array under object key must not be indented", self.line_start)
             return self.parse_block_array(expected_indent, False)
-        b = ord(self.s[self.pos])
+        b = int(self.buf[self.pos])
         if b == 34:
             str_start = self.pos
             fk = self.parse_string()
-            if self.pos >= self.n or ord(self.s[self.pos]) != 58:
+            if self.pos >= self.n or int(self.buf[self.pos]) != 58:
                 self.fail("nested block cannot be a standalone scalar", str_start)
             return self.parse_block_object(expected_indent, True, fk)
         if _is_alpha_or_us(b):
@@ -640,11 +660,11 @@ class _Parser:
                     self.fail("cannot mix array items and object keys at same indentation", self.line_start)
                 key = self.parse_key()
 
-            if self.pos >= self.n or ord(self.s[self.pos]) != 58:
+            if self.pos >= self.n or int(self.buf[self.pos]) != 58:
                 self.fail("expected ':' after object key", self.pos)
             self.pos += 1
 
-            if self.pos < self.n and ord(self.s[self.pos]) == 32:
+            if self.pos < self.n and int(self.buf[self.pos]) == 32:
                 self.pos += 1
                 val = self.parse_inline_value()
                 self.consume_line_end(True)
@@ -669,7 +689,7 @@ class _Parser:
                 self.fail("cannot mix object keys and array items at same indentation", self.line_start)
             self.pos += 1
 
-            if self.pos < self.n and ord(self.s[self.pos]) == 32:
+            if self.pos < self.n and int(self.buf[self.pos]) == 32:
                 self.pos += 1
                 elem = self.parse_inline_value()
                 self.consume_line_end(True)
@@ -681,7 +701,7 @@ class _Parser:
         return arr
 
     def parse_document(self) -> LmonValue:
-        if self.n >= 3 and ord(self.s[0]) == 0xEF and ord(self.s[1]) == 0xBB and ord(self.s[2]) == 0xBF:
+        if self.n >= 3 and int(self.buf[0]) == 0xEF and int(self.buf[1]) == 0xBB and int(self.buf[2]) == 0xBF:
             self.fail("UTF-8 BOM is not allowed", 0)
         self.line_indent = -2
         indent = self.peek_line()
@@ -694,20 +714,20 @@ class _Parser:
         if self.is_dash_item():
             res = self.parse_block_array(0, False)
         else:
-            b = ord(self.s[self.pos])
+            b = int(self.buf[self.pos])
             if b == 34:
                 first_str = self.parse_string()
-                if self.pos < self.n and ord(self.s[self.pos]) == 58:
+                if self.pos < self.n and int(self.buf[self.pos]) == 58:
                     res = self.parse_block_object(0, True, first_str)
                 else:
                     self.consume_line_end(True)
                     res = lmon_str(first_str)
             elif _is_alpha_or_us(b):
                 q = self.pos + 1
-                while q < self.n and _is_key_cont(ord(self.s[q])):
+                while q < self.n and _is_key_cont(int(self.buf[q])):
                     q += 1
                 ident = self.s[self.pos:q]
-                if _is_reserved(ident) and (q >= self.n or ord(self.s[q]) != 58):
+                if _is_reserved(ident) and (q >= self.n or int(self.buf[q]) != 58):
                     res = self.parse_inline_value()
                     self.consume_line_end(True)
                 else:
@@ -732,9 +752,10 @@ def _escape_string(s: str) -> str:
     out: list[str] = ["\""]
     start = 0
     n = len(s)
+    p = s.bin
     i = 0
     while i < n:
-        b = ord(s[i])
+        b = int(p[i])
         if b == 34 or b == 92 or b < 32:
             if i > start:
                 out.append(s[start:i])
@@ -764,12 +785,14 @@ def _escape_string(s: str) -> str:
     return "".join(out)
 
 def _is_valid_unquoted_key(k: str) -> bool:
-    if len(k) == 0 or _is_reserved(k):
+    n = len(k)
+    if n == 0 or _is_reserved(k):
         return False
-    if not _is_alpha_or_us(ord(k[0])):
+    p = k.bin
+    if not _is_alpha_or_us(int(p[0])):
         return False
-    for i in range(1, len(k)):
-        if not _is_key_cont(ord(k[i])):
+    for i in range(1, n):
+        if not _is_key_cont(int(p[i])):
             return False
     return True
 

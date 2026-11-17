@@ -1,19 +1,19 @@
-from date import Date, pad2, pad4
+from date import Date, pad2, pad4, _Tm
 
-@extern("stricta_time_now")
-def _dt_time_now() -> float:
+@extern("time")
+def _dt_libc_time(tloc: addr[int] | None) -> int:
     pass
 
-@extern("stricta_time_localtime")
-def _dt_localtime(epoch_sec: int) -> list[str]:
+@extern("localtime_r")
+def _dt_localtime_r(t: ref[int], res: mut_ref[_Tm]) -> addr[_Tm] | None:
     pass
 
-@extern("stricta_time_gmtime")
-def _dt_gmtime(epoch_sec: int) -> list[str]:
+@extern("gmtime_r")
+def _dt_gmtime_r(t: ref[int], res: mut_ref[_Tm]) -> addr[_Tm] | None:
     pass
 
-@extern("stricta_time_mktime")
-def _dt_mktime(y: int, m: int, d: int, H: int, M: int, S: int) -> int:
+@extern("mktime")
+def _dt_mktime_r(tm: mut_ref[_Tm]) -> int:
     pass
 
 class TimeDelta:
@@ -82,7 +82,10 @@ class DateTime:
         return Date(self.year, self.month, self.day)
 
     def timestamp(self) -> float:
-        return float(_dt_mktime(self.year, self.month, self.day, self.hour, self.minute, self.second))
+        tm = _Tm(i32(self.second), i32(self.minute), i32(self.hour),
+                 i32(self.day), i32(self.month - 1), i32(self.year - 1900),
+                 i32(0), i32(0), i32(-1), 0, None)
+        return float(_dt_mktime_r(tm.mut_ref))
 
     def isoformat(self) -> str:
         return f"{pad4(self.year)}-{pad2(self.month)}-{pad2(self.day)}T{pad2(self.hour)}:{pad2(self.minute)}:{pad2(self.second)}"
@@ -111,13 +114,22 @@ class DateTime:
         return TimeDelta(d_diff, s1 - s2)
 
 def now() -> DateTime:
-    parts = _dt_localtime(int(_dt_time_now()))
-    return DateTime(int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3]), int(parts[4]), int(parts[5]))
+    t = _dt_libc_time(None)
+    tm = _Tm(i32(0), i32(0), i32(0), i32(0), i32(0), i32(0), i32(0), i32(0), i32(0), 0, None)
+    _dt_localtime_r(t.ref, tm.mut_ref)
+    return DateTime(int(tm.tm_year) + 1900, int(tm.tm_mon) + 1, int(tm.tm_mday),
+                    int(tm.tm_hour), int(tm.tm_min), int(tm.tm_sec))
 
 def utcnow() -> DateTime:
-    parts = _dt_gmtime(int(_dt_time_now()))
-    return DateTime(int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3]), int(parts[4]), int(parts[5]))
+    t = _dt_libc_time(None)
+    tm = _Tm(i32(0), i32(0), i32(0), i32(0), i32(0), i32(0), i32(0), i32(0), i32(0), 0, None)
+    _dt_gmtime_r(t.ref, tm.mut_ref)
+    return DateTime(int(tm.tm_year) + 1900, int(tm.tm_mon) + 1, int(tm.tm_mday),
+                    int(tm.tm_hour), int(tm.tm_min), int(tm.tm_sec))
 
 def from_timestamp(ts: float) -> DateTime:
-    parts = _dt_localtime(int(ts))
-    return DateTime(int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3]), int(parts[4]), int(parts[5]))
+    t = int(ts)
+    tm = _Tm(i32(0), i32(0), i32(0), i32(0), i32(0), i32(0), i32(0), i32(0), i32(0), 0, None)
+    _dt_localtime_r(t.ref, tm.mut_ref)
+    return DateTime(int(tm.tm_year) + 1900, int(tm.tm_mon) + 1, int(tm.tm_mday),
+                    int(tm.tm_hour), int(tm.tm_min), int(tm.tm_sec))

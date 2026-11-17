@@ -31,11 +31,13 @@ def json_object() -> LmonValue:
 
 class _JsonParser:
     s: str
+    buf: addr[u8]
     n: int
     pos: int
 
     def __init__(self, s: str) -> None:
         self.n = len(s)
+        self.buf = s.bin
         self.s = s
         self.pos = 0
 
@@ -45,14 +47,14 @@ class _JsonParser:
         i = 0
         end = at_pos if at_pos < self.n else self.n
         while i < end:
-            b = ord(self.s[i])
+            b = int(self.buf[i])
             if b == 10:
                 line += 1
                 col = 1
             elif b == 13:
                 line += 1
                 col = 1
-                if i + 1 < end and ord(self.s[i + 1]) == 10:
+                if i + 1 < end and int(self.buf[i + 1]) == 10:
                     i += 1
             else:
                 col += 1
@@ -61,7 +63,7 @@ class _JsonParser:
 
     def skip_ws(self) -> None:
         while self.pos < self.n:
-            b = ord(self.s[self.pos])
+            b = int(self.buf[self.pos])
             if b == 32 or b == 9 or b == 10 or b == 13:
                 self.pos += 1
             else:
@@ -72,7 +74,7 @@ class _JsonParser:
             self.fail("invalid \\uXXXX escape", p)
         val = 0
         for i in range(4):
-            d = _hex_digit(ord(self.s[p + i]))
+            d = _hex_digit(int(self.buf[p + i]))
             if d < 0:
                 self.fail("invalid \\uXXXX escape", p + i)
             val = val * 16 + d
@@ -81,7 +83,7 @@ class _JsonParser:
     def parse_string(self) -> str:
         p = self.pos
         n = self.n
-        if p >= n or ord(self.s[p]) != 34:
+        if p >= n or int(self.buf[p]) != 34:
             self.fail("expected '\"'", p)
         p += 1
         parts: list[str] = []
@@ -90,7 +92,7 @@ class _JsonParser:
                 self.fail("unterminated string", p)
             start = p
             while p < n:
-                b = ord(self.s[p])
+                b = int(self.buf[p])
                 if b == 34 or b == 92 or b < 32:
                     break
                 p += 1
@@ -98,7 +100,7 @@ class _JsonParser:
                 parts.append(self.s[start:p])
             if p >= n:
                 self.fail("unterminated string", p)
-            b = ord(self.s[p])
+            b = int(self.buf[p])
             if b == 34:
                 self.pos = p + 1
                 return "".join(parts)
@@ -106,7 +108,7 @@ class _JsonParser:
                 p += 1
                 if p >= n:
                     self.fail("unterminated escape", p)
-                eb = ord(self.s[p])
+                eb = int(self.buf[p])
                 if eb == 34:
                     parts.append("\"")
                     p += 1
@@ -136,7 +138,7 @@ class _JsonParser:
                     code = self.parse_hex4(p)
                     p += 4
                     if code >= 0xD800 and code <= 0xDBFF:
-                        if p + 6 > n or ord(self.s[p]) != 92 or ord(self.s[p + 1]) != 117:
+                        if p + 6 > n or int(self.buf[p]) != 92 or int(self.buf[p + 1]) != 117:
                             self.fail("unpaired high surrogate", p)
                         low = self.parse_hex4(p + 2)
                         if low < 0xDC00 or low > 0xDFFF:
@@ -155,33 +157,33 @@ class _JsonParser:
         start = self.pos
         p = start
         n = self.n
-        if p < n and ord(self.s[p]) == 45:
+        if p < n and int(self.buf[p]) == 45:
             p += 1
-        if p >= n or not _is_digit(ord(self.s[p])):
+        if p >= n or not _is_digit(int(self.buf[p])):
             self.fail("invalid number", start)
-        if ord(self.s[p]) == 48:
+        if int(self.buf[p]) == 48:
             p += 1
-            if p < n and _is_digit(ord(self.s[p])):
+            if p < n and _is_digit(int(self.buf[p])):
                 self.fail("leading zero in number", p)
         else:
-            while p < n and _is_digit(ord(self.s[p])):
+            while p < n and _is_digit(int(self.buf[p])):
                 p += 1
         is_flt = False
-        if p < n and ord(self.s[p]) == 46:
+        if p < n and int(self.buf[p]) == 46:
             is_flt = True
             p += 1
-            if p >= n or not _is_digit(ord(self.s[p])):
+            if p >= n or not _is_digit(int(self.buf[p])):
                 self.fail("malformed decimal", p)
-            while p < n and _is_digit(ord(self.s[p])):
+            while p < n and _is_digit(int(self.buf[p])):
                 p += 1
-        if p < n and (ord(self.s[p]) == 101 or ord(self.s[p]) == 69):
+        if p < n and (int(self.buf[p]) == 101 or int(self.buf[p]) == 69):
             is_flt = True
             p += 1
-            if p < n and (ord(self.s[p]) == 43 or ord(self.s[p]) == 45):
+            if p < n and (int(self.buf[p]) == 43 or int(self.buf[p]) == 45):
                 p += 1
-            if p >= n or not _is_digit(ord(self.s[p])):
+            if p >= n or not _is_digit(int(self.buf[p])):
                 self.fail("malformed exponent", p)
-            while p < n and _is_digit(ord(self.s[p])):
+            while p < n and _is_digit(int(self.buf[p])):
                 p += 1
         raw = self.s[start:p]
         self.pos = p
@@ -193,7 +195,7 @@ class _JsonParser:
         self.pos += 1
         self.skip_ws()
         arr = lmon_array()
-        if self.pos < self.n and ord(self.s[self.pos]) == 93:
+        if self.pos < self.n and int(self.buf[self.pos]) == 93:
             self.pos += 1
             return arr
         while True:
@@ -202,7 +204,7 @@ class _JsonParser:
             self.skip_ws()
             if self.pos >= self.n:
                 self.fail("unterminated array", self.pos)
-            b = ord(self.s[self.pos])
+            b = int(self.buf[self.pos])
             if b == 44:
                 self.pos += 1
             elif b == 93:
@@ -215,16 +217,16 @@ class _JsonParser:
         self.pos += 1
         self.skip_ws()
         obj = lmon_object()
-        if self.pos < self.n and ord(self.s[self.pos]) == 125:
+        if self.pos < self.n and int(self.buf[self.pos]) == 125:
             self.pos += 1
             return obj
         while True:
             self.skip_ws()
-            if self.pos >= self.n or ord(self.s[self.pos]) != 34:
+            if self.pos >= self.n or int(self.buf[self.pos]) != 34:
                 self.fail("expected string key", self.pos)
             key = self.parse_string()
             self.skip_ws()
-            if self.pos >= self.n or ord(self.s[self.pos]) != 58:
+            if self.pos >= self.n or int(self.buf[self.pos]) != 58:
                 self.fail("expected ':'", self.pos)
             self.pos += 1
             self.skip_ws()
@@ -233,7 +235,7 @@ class _JsonParser:
             self.skip_ws()
             if self.pos >= self.n:
                 self.fail("unterminated object", self.pos)
-            b = ord(self.s[self.pos])
+            b = int(self.buf[self.pos])
             if b == 44:
                 self.pos += 1
             elif b == 125:
@@ -248,7 +250,7 @@ class _JsonParser:
         n = self.n
         if p >= n:
             self.fail("unexpected end of JSON", p)
-        b = ord(self.s[p])
+        b = int(self.buf[p])
         if b == 123:
             return self.parse_object()
         if b == 91:
@@ -270,7 +272,8 @@ class _JsonParser:
         return lmon_null()
 
 def loads(text: str) -> LmonValue:
-    if len(text) >= 3 and ord(text[0]) == 0xEF and ord(text[1]) == 0xBB and ord(text[2]) == 0xBF:
+    tb = text.bin
+    if len(text) >= 3 and int(tb[0]) == 0xEF and int(tb[1]) == 0xBB and int(tb[2]) == 0xBF:
         raise "JSONDecodeError: UTF-8 BOM is not allowed"
     p = _JsonParser(text.copy())
     val = p.parse_value()

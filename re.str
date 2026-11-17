@@ -1,11 +1,109 @@
-# Regular expressions for Stricta (POSIX extended regex via @extern)
+# Regular expressions for Stricta (POSIX extended regex via libc @extern)
+
+import sys
 
 IGNORECASE: int = 2
 MULTILINE: int = 4
 
-@extern("stricta_re_find")
+@extern("malloc")
+def _re_malloc_i64(size: int) -> addr[int]:
+    pass
+
+@extern("malloc")
+def _re_malloc_i32(size: int) -> addr[i32]:
+    pass
+
+@extern("malloc")
+def _re_malloc_u8(size: int) -> addr[u8]:
+    pass
+
+@extern("free")
+def _re_free_i64(p: addr[int]) -> None:
+    pass
+
+@extern("free")
+def _re_free_i32(p: addr[i32]) -> None:
+    pass
+
+@extern("free")
+def _re_free_u8(p: addr[u8]) -> None:
+    pass
+
+@extern("regcomp")
+def _re_regcomp(preg: addr[int], pattern: addr[u8], cflags: i32) -> i32:
+    pass
+
+@extern("regexec")
+def _re_regexec64(preg: addr[int], text: addr[u8], nmatch: int, pmatch: addr[int], eflags: i32) -> i32:
+    pass
+
+@extern("regexec")
+def _re_regexec32(preg: addr[int], text: addr[u8], nmatch: int, pmatch: addr[i32], eflags: i32) -> i32:
+    pass
+
+@extern("regerror")
+def _re_regerror(errcode: i32, preg: addr[int], errbuf: addr[u8], errbuf_size: int) -> int:
+    pass
+
+@extern("regfree")
+def _re_regfree(preg: addr[int]) -> None:
+    pass
+
 def _re_find(pattern: str, text: str, start_pos: int, flags: int) -> list[str]:
-    return []
+    res: list[str] = []
+    if start_pos < 0 or start_pos > len(text):
+        return res
+    is_darwin = sys.platform == "darwin"
+    cflags = 1
+    if (flags & 2) != 0:
+        cflags = cflags | 2
+    if (flags & 4) != 0:
+        cflags = cflags | (8 if is_darwin else 4)
+    preg = _re_malloc_i64(64)
+    rc = _re_regcomp(preg, pattern.bin, i32(cflags))
+    if rc != i32(0):
+        ebuf = _re_malloc_u8(256)
+        _re_regerror(rc, preg, ebuf, 256)
+        err_msg = unbin(ebuf)
+        _re_free_u8(ebuf)
+        _re_free_i64(preg)
+        res.append("ERR:" + err_msg)
+        return res
+    nsub = preg[1] if is_darwin else preg[6]
+    nmatch = nsub + 1
+    eflags = i32(1 if start_pos > 0 else 0)
+    sub_text = text[start_pos:]
+    if is_darwin:
+        pm64 = _re_malloc_i64(nmatch * 16)
+        mrc = _re_regexec64(preg, sub_text.bin, nmatch, pm64, eflags)
+        if mrc == i32(0):
+            res.append(str(start_pos + pm64[0]))
+            res.append(str(start_pos + pm64[1]))
+            for i in range(nmatch):
+                so = pm64[i * 2]
+                eo = pm64[i * 2 + 1]
+                if so < 0 or eo < so:
+                    res.append("")
+                else:
+                    res.append(sub_text[so:eo])
+        _re_free_i64(pm64)
+    else:
+        pm32 = _re_malloc_i32(nmatch * 8)
+        mrc = _re_regexec32(preg, sub_text.bin, nmatch, pm32, eflags)
+        if mrc == i32(0):
+            res.append(str(start_pos + int(pm32[0])))
+            res.append(str(start_pos + int(pm32[1])))
+            for i in range(nmatch):
+                so = int(pm32[i * 2])
+                eo = int(pm32[i * 2 + 1])
+                if so < 0 or eo < so:
+                    res.append("")
+                else:
+                    res.append(sub_text[so:eo])
+        _re_free_i32(pm32)
+    _re_regfree(preg)
+    _re_free_i64(preg)
+    return res
 
 class Match:
     _start: int

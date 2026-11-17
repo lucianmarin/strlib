@@ -1,18 +1,29 @@
-@extern("stricta_sys_get_argv")
-def _sys_get_argv() -> list[str]:
+@extern("exit")
+def _sys_libc_exit(code: i32) -> None:
     pass
 
-@extern("stricta_sys_exit")
-def _sys_exit(code: int) -> None:
+@extern("uname")
+def _sys_libc_uname(buf: addr[u8]) -> i32:
     pass
 
-@extern("stricta_sys_platform")
-def _sys_platform() -> str:
+@extern("malloc")
+def _sys_malloc(size: int) -> addr[u8]:
     pass
 
-argv: list[str] = _sys_get_argv()
-platform: str = _sys_platform()
+@extern("free")
+def _sys_free(p: addr[u8]) -> None:
+    pass
+
+def _detect_platform() -> str:
+    buf = _sys_malloc(4096)
+    rc = _sys_libc_uname(buf)
+    res = unbin(buf).lower() if rc == i32(0) else "unknown"
+    _sys_free(buf)
+    return res
+
+argv: list[str] = sys_argv()
+platform: str = _detect_platform()
 version: str = "0.1.0"
 
 def exit(code: int = 0) -> None:
-    _sys_exit(code)
+    _sys_libc_exit(i32(code))

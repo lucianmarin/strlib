@@ -1,9 +1,25 @@
-@extern("stricta_time_now")
-def _d_time_now() -> float:
+from dataclasses import dataclass
+
+@dataclass
+class _Tm:
+    tm_sec: i32
+    tm_min: i32
+    tm_hour: i32
+    tm_mday: i32
+    tm_mon: i32
+    tm_year: i32
+    tm_wday: i32
+    tm_yday: i32
+    tm_isdst: i32
+    tm_gmtoff: int
+    tm_zone: addr[u8] | None
+
+@extern("time")
+def _d_libc_time(tloc: addr[int] | None) -> int:
     pass
 
-@extern("stricta_time_localtime")
-def _d_localtime(epoch_sec: int) -> list[str]:
+@extern("localtime_r")
+def _d_localtime_r(t: ref[int], res: mut_ref[_Tm]) -> addr[_Tm] | None:
     pass
 
 def is_leap_year(year: int) -> bool:
@@ -99,8 +115,10 @@ class Date:
         return self.to_ordinal() < other.to_ordinal()
 
 def today() -> Date:
-    parts = _d_localtime(int(_d_time_now()))
-    return Date(int(parts[0]), int(parts[1]), int(parts[2]))
+    t = _d_libc_time(None)
+    tm = _Tm(i32(0), i32(0), i32(0), i32(0), i32(0), i32(0), i32(0), i32(0), i32(0), 0, None)
+    _d_localtime_r(t.ref, tm.mut_ref)
+    return Date(int(tm.tm_year) + 1900, int(tm.tm_mon) + 1, int(tm.tm_mday))
 
 def from_iso(s: str) -> Date:
     parts = s.strip().split("-")

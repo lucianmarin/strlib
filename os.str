@@ -1,61 +1,150 @@
-@extern("stricta_os_exec_list")
-def _os_exec_list(cmd: str) -> list[str]:
+import sys
+
+@extern("malloc")
+def _os_malloc(size: int) -> addr[u8]:
     pass
 
-@extern("stricta_os_system")
+@extern("realloc")
+def _os_realloc(p: addr[u8], size: int) -> addr[u8]:
+    pass
+
+@extern("free")
+def _os_free(p: addr[u8]) -> None:
+    pass
+
+@extern("popen")
+def _os_popen(cmd: addr[u8], mode: addr[u8]) -> addr[u8] | None:
+    pass
+
+@extern("fread")
+def _os_fread(ptr: addr[u8], size: int, nmemb: int, stream: addr[u8]) -> int:
+    pass
+
+@extern("pclose")
+def _os_pclose(stream: addr[u8]) -> i32:
+    pass
+
+@extern("system")
+def _os_libc_system(cmd: addr[u8]) -> i32:
+    pass
+
+@extern("access")
+def _os_libc_access(path: addr[u8], mode: i32) -> i32:
+    pass
+
+@extern("mkdir")
+def _os_libc_mkdir(path: addr[u8], mode: i32) -> i32:
+    pass
+
+@extern("opendir")
+def _os_opendir(path: addr[u8]) -> addr[u8] | None:
+    pass
+
+@extern("readdir")
+def _os_readdir(dirp: addr[u8]) -> addr[u8] | None:
+    pass
+
+@extern("closedir")
+def _os_closedir(dirp: addr[u8]) -> i32:
+    pass
+
+@extern("getenv")
+def _os_libc_getenv(name: addr[u8]) -> addr[u8] | None:
+    pass
+
+@extern("getcwd")
+def _os_libc_getcwd(buf: addr[u8], size: int) -> addr[u8] | None:
+    pass
+
+@extern("unlink")
+def _os_libc_unlink(path: addr[u8]) -> i32:
+    pass
+
+@extern("symlink")
+def _os_libc_symlink(target: addr[u8], linkpath: addr[u8]) -> i32:
+    pass
+
 def system(cmd: str) -> int:
-    pass
-
-@extern("stricta_os_exists")
-def _os_exists(path: str) -> int:
-    pass
-
-@extern("stricta_os_isdir")
-def _os_isdir(path: str) -> int:
-    pass
-
-@extern("stricta_os_mkdir")
-def _os_mkdir(path: str) -> int:
-    pass
-
-@extern("stricta_os_listdir")
-def listdir(path: str) -> list[str]:
-    pass
-
-@extern("stricta_os_getenv")
-def getenv(name: str) -> str:
-    pass
-
-@extern("stricta_os_getcwd")
-def getcwd() -> str:
-    pass
-
-@extern("stricta_os_remove")
-def _os_remove(path: str) -> int:
-    pass
-
-@extern("stricta_os_symlink")
-def _os_symlink(target: str, linkpath: str) -> int:
-    pass
+    st = int(_os_libc_system(cmd.bin))
+    if st < 0:
+        return -1
+    if (st & 127) == 0:
+        return (st >> 8) & 255
+    return -1
 
 def exec(cmd: str) -> tuple[int, str]:
-    res = _os_exec_list(cmd)
-    return (int(res[0]), res[1].copy())
+    fp = _os_popen(cmd.bin, "r".bin)
+    if fp is None:
+        return (-1, "")
+    cap = 4096
+    length = 0
+    buf = _os_malloc(cap)
+    while True:
+        avail = cap - length - 1
+        if avail < 1024:
+            cap *= 2
+            buf = _os_realloc(buf, cap)
+            avail = cap - length - 1
+        n = _os_fread(buf + length, 1, avail, fp)
+        if n <= 0:
+            break
+        length += n
+    buf[length] = u8(0)
+    st = int(_os_pclose(fp))
+    rc = (st >> 8) & 255 if (st & 127) == 0 else -1
+    out = unbin(buf)
+    _os_free(buf)
+    return (rc, out)
 
 def exists(path: str) -> bool:
-    return _os_exists(path) != 0
+    return _os_libc_access(path.bin, i32(0)) == i32(0)
 
 def isdir(path: str) -> bool:
-    return _os_isdir(path) != 0
+    d = _os_opendir(path.bin)
+    if d is None:
+        return False
+    _os_closedir(d)
+    return True
+
+def listdir(path: str) -> list[str]:
+    out: list[str] = []
+    d = _os_opendir(path.bin)
+    if d is None:
+        return out
+    name_off = 21 if sys.platform == "darwin" else 19
+    while True:
+        ent = _os_readdir(d)
+        if ent is None:
+            break
+        name = unbin(ent + name_off)
+        if name != "." and name != "..":
+            out.append(name)
+    _os_closedir(d)
+    return out
+
+def getenv(name: str) -> str:
+    p = _os_libc_getenv(name.bin)
+    return unbin(p) if p is not None else ""
+
+def getcwd() -> str:
+    buf = _os_malloc(4096)
+    p = _os_libc_getcwd(buf, 4096)
+    res = unbin(p) if p is not None else ""
+    _os_free(buf)
+    return res
 
 def remove(path: str) -> bool:
-    return _os_remove(path) != 0
+    return _os_libc_unlink(path.bin) == i32(0)
 
 def symlink(target: str, linkpath: str) -> bool:
-    return _os_symlink(target, linkpath) != 0
+    return _os_libc_symlink(target.bin, linkpath.bin) == i32(0)
 
 def mkdir(path: str) -> bool:
-    return _os_mkdir(path) != 0
+    if len(path) == 0:
+        return False
+    if _os_libc_mkdir(path.bin, i32(493)) == i32(0):
+        return True
+    return isdir(path)
 
 def mkdir_p(path: str) -> bool:
     if len(path) == 0:
@@ -68,7 +157,7 @@ def mkdir_p(path: str) -> bool:
             cur = cur + part
         else:
             cur = cur + "/" + part
-        if _os_mkdir(cur) == 0:
+        if not mkdir(cur):
             return False
     return True
 

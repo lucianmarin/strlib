@@ -1,14 +1,37 @@
-@extern("stricta_time_now")
+from dataclasses import dataclass
+import sys
+
+@dataclass
+class _Timespec:
+    tv_sec: int
+    tv_nsec: int
+
+@extern("clock_gettime")
+def _t_clock_gettime(clk_id: i32, tp: mut_ref[_Timespec]) -> i32:
+    pass
+
+@extern("nanosleep")
+def _t_nanosleep(req: ref[_Timespec], rem: addr[_Timespec] | None) -> i32:
+    pass
+
 def time() -> float:
-    pass
+    ts = _Timespec(0, 0)
+    _t_clock_gettime(i32(0), ts.mut_ref)
+    return float(ts.tv_sec) + float(ts.tv_nsec) * 1e-9
 
-@extern("stricta_time_monotonic")
 def monotonic() -> float:
-    pass
+    ts = _Timespec(0, 0)
+    clk = 6 if sys.platform == "darwin" else 1
+    _t_clock_gettime(i32(clk), ts.mut_ref)
+    return float(ts.tv_sec) + float(ts.tv_nsec) * 1e-9
 
-@extern("stricta_time_sleep")
 def sleep(secs: float) -> None:
-    pass
+    if secs <= 0.0:
+        return
+    sec_i = int(secs)
+    nsec_i = int((secs - float(sec_i)) * 1e9)
+    req = _Timespec(sec_i, nsec_i)
+    _t_nanosleep(req.ref, None)
 
 def perf_counter() -> float:
     return monotonic()

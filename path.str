@@ -28,9 +28,10 @@ class Path:
 
     def suffix(self) -> str:
         nm = self.name()
+        p = nm.bin
         dot = -1
         for i in range(len(nm) - 1, 0, -1):
-            if nm[i:i + 1] == ".":
+            if p[i] == u8(46):
                 dot = i
                 break
         if dot <= 0:

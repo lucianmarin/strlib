@@ -30,12 +30,13 @@ def _u32_to_hex(v: u32) -> str:
         parts.append(digits[nib:nib + 1])
     return "".join(parts)
 
-def _sha256_raw(msg: list[int]) -> str:
-    orig_len = len(msg)
+def _sha256_raw(p: addr[u8], orig_len: int) -> str:
     bit_len: u64 = u64(orig_len) * u64(8)
 
     # Pad: 0x80, then 0x00 until length % 64 == 56, then 8-byte big-endian bit length
-    padded: list[int] = msg.copy()
+    padded: list[int] = []
+    for i in range(orig_len):
+        padded.append(int(p[i]))
     padded.append(0x80)
     while len(padded) % 64 != 56:
         padded.append(0)
@@ -102,13 +103,7 @@ def _sha256_raw(msg: list[int]) -> str:
             _u32_to_hex(h4) + _u32_to_hex(h5) + _u32_to_hex(h6) + _u32_to_hex(h7))
 
 def sha256(text: str) -> str:
-    bs: list[int] = []
-    for i in range(len(text)):
-        bs.append(ord(text[i:i + 1]))
-    return _sha256_raw(bs)
+    return _sha256_raw(text.bin, len(text))
 
 def sha256_bytes(data: bytes) -> str:
-    bs: list[int] = []
-    for i in range(len(data)):
-        bs.append(data[i])
-    return _sha256_raw(bs)
+    return _sha256_raw(data.bin, len(data))

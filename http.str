@@ -6,9 +6,12 @@ import lmon
 import json
 from lmon import LmonValue
 
-@extern("stricta_unique_id")
+_uid_seq: int = 0
+
 def _next_uid() -> int:
-    return 0
+    global _uid_seq
+    _uid_seq += 1
+    return _uid_seq
 
 def _shell_quote(s: str) -> str:
     return "'" + s.replace("'", "'\"'\"'") + "'"
@@ -17,19 +20,24 @@ def _url_encode_component(s: str) -> str:
     hex_chars = "0123456789ABCDEF"
     out: list[str] = []
     n = len(s)
+    p = s.bin
+    start = 0
     for i in range(n):
-        ch = s[i:i + 1]
-        b = ord(ch)
+        b = int(p[i])
         is_unreserved = ((b >= 65 and b <= 90) or (b >= 97 and b <= 122) or
                          (b >= 48 and b <= 57) or b == 45 or b == 95 or b == 46 or b == 126)
-        if is_unreserved:
-            out.append(ch)
-        elif b == 32:
-            out.append("+")
-        else:
-            hi = (b >> 4) & 0xF
-            lo = b & 0xF
-            out.append("%" + hex_chars[hi:hi + 1] + hex_chars[lo:lo + 1])
+        if not is_unreserved:
+            if i > start:
+                out.append(s[start:i])
+            if b == 32:
+                out.append("+")
+            else:
+                hi = (b >> 4) & 0xF
+                lo = b & 0xF
+                out.append("%" + hex_chars[hi:hi + 1] + hex_chars[lo:lo + 1])
+            start = i + 1
+    if start < n:
+        out.append(s[start:n])
     return "".join(out)
 
 def urlencode(params: dict[str, str]) -> str:

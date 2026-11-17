@@ -13,9 +13,16 @@ def test_scalars_and_containers() -> None:
     assert doc.get_bool("active")
     ev = doc.get("extra")
     assert ev is not None and ev.is_null()
-    tv = doc.get("tags")
+    tv = doc.get_ref("tags")
     assert tv is not None and tv.is_array() and tv.len_val() == 2
-    assert tv.arr[0].as_str() == "a" and tv.arr[1].as_str() == "b"
+    assert tv.at(0).as_str() == "a" and tv.at(1).as_str() == "b"
+
+    # Zero-copy mut_ref in-place DOM mutation
+    tv_mut = doc.get_mut("tags")
+    assert tv_mut is not None
+    tv_mut.at_mut(1).sval = "bb"
+    tv2 = doc.get_ref("tags")
+    assert tv2 is not None and tv2.at(1).as_str() == "bb"
 
 def test_gateway_and_edge_cases() -> None:
     if os.exists("../lmon/examples/gateway.lmon"):
