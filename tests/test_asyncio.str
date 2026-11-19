@@ -1,0 +1,51 @@
+import asyncio
+import time
+
+async def double_after(x: int, delay: float) -> int:
+    await asyncio.sleep(delay)
+    return x * 2
+
+async def greet_after(name: str, delay: float) -> str:
+    await asyncio.sleep(delay)
+    return f"hello {name}"
+
+async def run_all() -> tuple[int, str]:
+    pair: tuple[int, str] = await asyncio.gather2(
+        double_after(21, 0.05),
+        greet_after("asyncio", 0.05)
+    )
+    return pair
+
+async def run_list() -> list[int]:
+    tasks: list[Task[int]] = [
+        double_after(1, 0.04),
+        double_after(2, 0.04),
+        double_after(3, 0.04),
+    ]
+    return await asyncio.gather(tasks)
+
+def main() -> None:
+    # 1. asyncio.run on a single coroutine
+    v: int = asyncio.run(double_after(5, 0.01))
+    assert v == 10
+
+    # 2. asyncio.gather2 interleaves two 0.05s sleeps in < 0.09s
+    t0: float = time.monotonic()
+    pair: tuple[int, str] = asyncio.run(run_all())
+    elapsed: float = time.monotonic() - t0
+    assert pair[0] == 42
+    assert pair[1] == "hello asyncio"
+    assert elapsed < 0.09
+
+    # 3. asyncio.gather on a list of tasks interleaves three 0.04s sleeps in < 0.09s
+    t1: float = time.monotonic()
+    res: list[int] = asyncio.run(run_list())
+    elapsed2: float = time.monotonic() - t1
+    assert len(res) == 3
+    assert res[0] == 2 and res[1] == 4 and res[2] == 6
+    assert elapsed2 < 0.09
+
+    print("test_asyncio passed!")
+
+if __name__ == "__main__":
+    main()

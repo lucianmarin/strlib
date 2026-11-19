@@ -1,0 +1,68 @@
+import time
+
+def is_done(task) -> bool:
+    return _task_is_done(task)
+
+def step(task) -> bool:
+    return _task_step(task)
+
+async def yield_now() -> None:
+    _coro_yield()
+
+async def sleep(delay: float) -> None:
+    if delay <= 0.0:
+        _coro_yield()
+        return
+    deadline: float = time.monotonic() + delay
+    while time.monotonic() < deadline:
+        _coro_yield()
+
+def run(coro):
+    while not _task_is_done(coro):
+        if not _task_step(coro):
+            time.sleep(0.001)
+    return await coro
+
+async def gather(tasks):
+    n: int = len(tasks)
+    while True:
+        all_done: bool = True
+        for i in range(n):
+            if not _task_is_done(tasks[i]):
+                _task_step(tasks[i])
+                if not _task_is_done(tasks[i]):
+                    all_done = False
+        if all_done:
+            break
+        _coro_yield()
+    results = []
+    while len(tasks) > 0:
+        results.append(await tasks.pop(0))
+    return results
+
+async def gather2(t1, t2):
+    while not _task_is_done(t1) or not _task_is_done(t2):
+        if not _task_is_done(t1):
+            _task_step(t1)
+        if not _task_is_done(t2):
+            _task_step(t2)
+        if not _task_is_done(t1) or not _task_is_done(t2):
+            _coro_yield()
+    r1 = await t1
+    r2 = await t2
+    return (r1, r2)
+
+async def gather3(t1, t2, t3):
+    while not _task_is_done(t1) or not _task_is_done(t2) or not _task_is_done(t3):
+        if not _task_is_done(t1):
+            _task_step(t1)
+        if not _task_is_done(t2):
+            _task_step(t2)
+        if not _task_is_done(t3):
+            _task_step(t3)
+        if not _task_is_done(t1) or not _task_is_done(t2) or not _task_is_done(t3):
+            _coro_yield()
+    r1 = await t1
+    r2 = await t2
+    r3 = await t3
+    return (r1, r2, r3)
