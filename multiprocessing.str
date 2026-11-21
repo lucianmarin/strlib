@@ -1,0 +1,261 @@
+from dataclasses import dataclass
+from typing import Callable
+import sys
+
+@dataclass
+class _PipeFds:
+    rfd: i32
+    wfd: i32
+
+@extern("fork")
+def _mp_fork() -> i32:
+    pass
+
+@extern("waitpid")
+def _mp_waitpid(pid: i32, status: addr[i32], options: i32) -> i32:
+    pass
+
+@extern("_exit")
+def _mp_exit(code: i32) -> None:
+    pass
+
+@extern("getpid")
+def _mp_getpid() -> i32:
+    pass
+
+@extern("getppid")
+def _mp_getppid() -> i32:
+    pass
+
+@extern("pipe")
+def _mp_pipe(fds: mut_ref[_PipeFds]) -> i32:
+    pass
+
+@extern("read")
+def _mp_read(fd: i32, buf: addr[u8], count: int) -> int:
+    pass
+
+@extern("write")
+def _mp_write(fd: i32, buf: addr[u8], count: int) -> int:
+    pass
+
+@extern("close")
+def _mp_close(fd: i32) -> i32:
+    pass
+
+@extern("fopen")
+def _mp_fopen(path: addr[u8], mode: addr[u8]) -> addr[u8] | None:
+    pass
+
+@extern("fileno")
+def _mp_fileno(fp: addr[u8]) -> i32:
+    pass
+
+@extern("fclose")
+def _mp_fclose(fp: addr[u8]) -> i32:
+    pass
+
+@extern("ftruncate")
+def _mp_ftruncate(fd: i32, length: int) -> i32:
+    pass
+
+@extern("mmap")
+def _mp_mmap(addr_hint: addr[u8] | None, length: int, prot: i32, flags: i32, fd: i32, offset: int) -> addr[u8]:
+    pass
+
+@extern("mmap")
+def _mp_mmap_i64(addr_hint: addr[u8] | None, length: int, prot: i32, flags: i32, fd: i32, offset: int) -> addr[i64]:
+    pass
+
+@extern("munmap")
+def _mp_munmap(p: addr[u8], length: int) -> i32:
+    pass
+
+@extern("munmap")
+def _mp_munmap_i64(p: addr[i64], length: int) -> i32:
+    pass
+
+@extern("flock")
+def _mp_flock(fd: i32, operation: i32) -> i32:
+    pass
+
+@extern("malloc")
+def _mp_malloc(size: int) -> addr[u8]:
+    pass
+
+@extern("free")
+def _mp_free(p: addr[u8]) -> None:
+    pass
+
+def getpid() -> int:
+    return int(_mp_getpid())
+
+def getppid() -> int:
+    return int(_mp_getppid())
+
+class Process:
+    _target: Callable[[], int]
+    _pid: i32
+    _started: bool
+    _joined: bool
+    _exitcode: int
+
+    def __init__(self, target: Callable[[], int]) -> None:
+        self._target = target
+        self._pid = i32(-1)
+        self._started = False
+        self._joined = False
+        self._exitcode = -1
+
+    def start(self) -> None:
+        if self._started:
+            return
+        pid = _mp_fork()
+        if pid < i32(0):
+            raise "RuntimeError: fork failed"
+        if pid == i32(0):
+            fn = self._target
+            code = fn()
+            _mp_exit(i32(code))
+        self._pid = pid
+        self._started = True
+
+    def join(self) -> int:
+        if not self._started or self._joined:
+            return self._exitcode
+        status: i32 = i32(0)
+        rc = _mp_waitpid(self._pid, status.addr, i32(0))
+        if rc < i32(0):
+            raise "RuntimeError: waitpid failed"
+        self._joined = True
+        st = int(status)
+        if (st & 127) == 0:
+            self._exitcode = (st >> 8) & 255
+        else:
+            self._exitcode = -(st & 127)
+        return self._exitcode
+
+    def pid(self) -> int:
+        return int(self._pid)
+
+    def is_alive(self) -> bool:
+        if not self._started or self._joined:
+            return False
+        status: i32 = i32(0)
+        rc = _mp_waitpid(self._pid, status.addr, i32(1)) # WNOHANG = 1
+        return rc == i32(0)
+
+class Pipe:
+    _rfd: i32
+    _wfd: i32
+
+    def __init__(self) -> None:
+        fds = _PipeFds(i32(-1), i32(-1))
+        if _mp_pipe(fds.mut_ref) != i32(0):
+            raise "RuntimeError: pipe failed"
+        self._rfd = fds.rfd
+        self._wfd = fds.wfd
+
+    def send(self, data: str) -> int:
+        return _mp_write(self._wfd, data.bin, len(data))
+
+    def recv(self, max_bytes: int = 4096) -> str:
+        buf = _mp_malloc(max_bytes + 1)
+        n = _mp_read(self._rfd, buf, max_bytes)
+        if n <= 0:
+            _mp_free(buf)
+            return ""
+        val(buf + n) = u8(0)
+        out = unbin(buf)
+        _mp_free(buf)
+        return out
+
+    def close_read(self) -> None:
+        if self._rfd >= i32(0):
+            _mp_close(self._rfd)
+            self._rfd = i32(-1)
+
+    def close_write(self) -> None:
+        if self._wfd >= i32(0):
+            _mp_close(self._wfd)
+            self._wfd = i32(-1)
+
+    def close(self) -> None:
+        self.close_read()
+        self.close_write()
+
+class SharedMemory:
+    _ptr: addr[i64]
+    _size: int
+    _fp: addr[u8] | None
+    _closed: bool
+
+    def __init__(self, size: int, path: str = "") -> None:
+        self._size = size
+        self._fp = None
+        self._closed = False
+        prot = i32(3) # PROT_READ | PROT_WRITE
+        if len(path) == 0:
+            flags = i32(4097) if sys.platform == "darwin" else i32(33) # MAP_SHARED | MAP_ANON
+            p = _mp_mmap_i64(None, size, prot, flags, i32(-1), 0)
+            if int(p) == -1:
+                raise "RuntimeError: mmap anonymous failed"
+            self._ptr = p
+        else:
+            fp = _mp_fopen(path.bin, "a+".bin)
+            if fp is None:
+                raise "RuntimeError: open shared memory file failed"
+            fd = _mp_fileno(fp)
+            if _mp_ftruncate(fd, size) != i32(0):
+                _mp_fclose(fp)
+                raise "RuntimeError: ftruncate failed"
+            p = _mp_mmap_i64(None, size, prot, i32(1), fd, 0) # MAP_SHARED = 1
+            if int(p) == -1:
+                _mp_fclose(fp)
+                raise "RuntimeError: mmap file failed"
+            self._fp = fp
+            self._ptr = p
+
+    def ptr_i64(self) -> addr[i64]:
+        return self._ptr
+
+    def close(self) -> None:
+        if not self._closed:
+            _mp_munmap_i64(self._ptr, self._size)
+            fp = self._fp
+            if fp is not None:
+                _mp_fclose(fp)
+                self._fp = None
+            self._closed = True
+
+class FileLock:
+    _fp: addr[u8] | None
+    _fd: i32
+
+    def __init__(self, path: str) -> None:
+        fp = _mp_fopen(path.bin, "a+".bin)
+        if fp is None:
+            raise "RuntimeError: FileLock open failed"
+        self._fp = fp
+        self._fd = _mp_fileno(fp)
+
+    def lock_shared(self) -> None:
+        if _mp_flock(self._fd, i32(1)) != i32(0):
+            raise "RuntimeError: flock LOCK_SH failed"
+
+    def lock_exclusive(self) -> None:
+        if _mp_flock(self._fd, i32(2)) != i32(0):
+            raise "RuntimeError: flock LOCK_EX failed"
+
+    def try_lock_exclusive(self) -> bool:
+        return _mp_flock(self._fd, i32(6)) == i32(0) # LOCK_EX | LOCK_NB
+
+    def unlock(self) -> None:
+        _mp_flock(self._fd, i32(8)) # LOCK_UN
+
+    def close(self) -> None:
+        fp = self._fp
+        if fp is not None:
+            _mp_fclose(fp)
+            self._fp = None
+            self._fd = i32(-1)

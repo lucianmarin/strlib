@@ -1,0 +1,67 @@
+import threading
+
+_shared_lock_counter: i64 = 0
+
+def _atomic_worker(arg: addr[u8]) -> addr[u8] | None:
+    i = 0
+    while i < 1000:
+        atomic_add(arg, u8(1))
+        i += 1
+    return None
+
+def _inc_worker(arg: addr[u8]) -> addr[u8] | None:
+    # arg is unused; just test thread spawn & join
+    _ = arg
+    return None
+
+def test_thread_and_atomics() -> None:
+    a = threading.AtomicInt(10)
+    assert a.load() == 10
+    assert a.add(5) == 10
+    assert a.load() == 15
+    assert a.sub(3) == 15
+    assert a.load() == 12
+    assert a.cas(12, 42)
+    assert not a.cas(12, 99)
+    assert a.load() == 42
+    assert a.xchg(7) == 42
+    assert a.load() == 7
+    a.destroy()
+
+def _small_worker(p: addr[u8]) -> addr[u8] | None:
+    j = 0
+    while j < 50:
+        atomic_add(p, u8(1))
+        j += 1
+    return None
+
+def test_lock_and_threads() -> None:
+    lk = threading.Lock()
+    assert lk.acquire()
+    lk.release()
+    assert lk.try_acquire()
+    lk.release()
+    lk.destroy()
+
+    t1 = threading.Thread(_inc_worker)
+    t2 = threading.Thread(_inc_worker)
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+    assert not t1.is_alive()
+    assert not t2.is_alive()
+
+    # Multi-threaded atomic increments on u8 (wrap-safe: 2 * 50 = 100)
+    cnt: u8 = u8(0)
+    w1 = threading.Thread(_small_worker, cnt.addr)
+    w2 = threading.Thread(_small_worker, cnt.addr)
+    w1.start()
+    w2.start()
+    w1.join()
+    w2.join()
+    assert atomic_load(cnt.addr) == u8(100)
+
+test_thread_and_atomics()
+test_lock_and_threads()
+print("test_threading: ok")

@@ -1,0 +1,209 @@
+from typing import Callable
+
+@extern("calloc")
+def _th_calloc(nmemb: int, size: int) -> addr[u8]:
+    pass
+
+@extern("free")
+def _th_free(p: addr[u8]) -> None:
+    pass
+
+@extern("pthread_create")
+def _th_pthread_create(tid: addr[u64], attr: addr[u8] | None, start_routine: Callable[[addr[u8]], addr[u8] | None], arg: addr[u8] | None) -> i32:
+    pass
+
+@extern("pthread_join")
+def _th_pthread_join(tid: u64, retval: addr[u8] | None) -> i32:
+    pass
+
+@extern("pthread_detach")
+def _th_pthread_detach(tid: u64) -> i32:
+    pass
+
+@extern("pthread_self")
+def _th_pthread_self() -> u64:
+    pass
+
+@extern("pthread_mutex_init")
+def _th_mutex_init(m: addr[u8], attr: addr[u8] | None) -> i32:
+    pass
+
+@extern("pthread_mutex_destroy")
+def _th_mutex_destroy(m: addr[u8]) -> i32:
+    pass
+
+@extern("pthread_mutex_lock")
+def _th_mutex_lock(m: addr[u8]) -> i32:
+    pass
+
+@extern("pthread_mutex_trylock")
+def _th_mutex_trylock(m: addr[u8]) -> i32:
+    pass
+
+@extern("pthread_mutex_unlock")
+def _th_mutex_unlock(m: addr[u8]) -> i32:
+    pass
+
+@extern("pthread_cond_init")
+def _th_cond_init(c: addr[u8], attr: addr[u8] | None) -> i32:
+    pass
+
+@extern("pthread_cond_destroy")
+def _th_cond_destroy(c: addr[u8]) -> i32:
+    pass
+
+@extern("pthread_cond_wait")
+def _th_cond_wait(c: addr[u8], m: addr[u8]) -> i32:
+    pass
+
+@extern("pthread_cond_signal")
+def _th_cond_signal(c: addr[u8]) -> i32:
+    pass
+
+@extern("pthread_cond_broadcast")
+def _th_cond_broadcast(c: addr[u8]) -> i32:
+    pass
+
+def current_thread_id() -> u64:
+    return _th_pthread_self()
+
+class Thread:
+    _target: Callable[[addr[u8]], addr[u8] | None]
+    _arg: addr[u8] | None
+    _tid: u64
+    _started: bool
+    _joined: bool
+
+    def __init__(self, target: Callable[[addr[u8]], addr[u8] | None], arg: addr[u8] | None = None) -> None:
+        self._target = target
+        self._arg = arg
+        self._tid = u64(0)
+        self._started = False
+        self._joined = False
+
+    def start(self) -> None:
+        if self._started:
+            return
+        tid: u64 = u64(0)
+        rc = _th_pthread_create(tid.addr, None, self._target, self._arg)
+        if rc != i32(0):
+            raise "RuntimeError: pthread_create failed"
+        self._tid = tid
+        self._started = True
+
+    def join(self) -> None:
+        if not self._started or self._joined:
+            return
+        rc = _th_pthread_join(self._tid, None)
+        if rc != i32(0):
+            raise "RuntimeError: pthread_join failed"
+        self._joined = True
+
+    def detach(self) -> None:
+        if not self._started or self._joined:
+            return
+        _th_pthread_detach(self._tid)
+        self._joined = True
+
+    def is_alive(self) -> bool:
+        return self._started and not self._joined
+
+class Lock:
+    _buf: addr[u8]
+    _destroyed: bool
+
+    def __init__(self) -> None:
+        self._buf = _th_calloc(1, 64)
+        self._destroyed = False
+        rc = _th_mutex_init(self._buf, None)
+        if rc != i32(0):
+            _th_free(self._buf)
+            raise "RuntimeError: pthread_mutex_init failed"
+
+    def acquire(self) -> bool:
+        return _th_mutex_lock(self._buf) == i32(0)
+
+    def try_acquire(self) -> bool:
+        return _th_mutex_trylock(self._buf) == i32(0)
+
+    def release(self) -> None:
+        _th_mutex_unlock(self._buf)
+
+    def raw_ptr(self) -> addr[u8]:
+        return self._buf
+
+    def destroy(self) -> None:
+        if not self._destroyed:
+            _th_mutex_destroy(self._buf)
+            _th_free(self._buf)
+            self._destroyed = True
+
+class Condition:
+    _buf: addr[u8]
+    _destroyed: bool
+
+    def __init__(self) -> None:
+        self._buf = _th_calloc(1, 64)
+        self._destroyed = False
+        rc = _th_cond_init(self._buf, None)
+        if rc != i32(0):
+            _th_free(self._buf)
+            raise "RuntimeError: pthread_cond_init failed"
+
+    def wait(self, lock: Lock) -> None:
+        _th_cond_wait(self._buf, lock.raw_ptr())
+
+    def notify(self) -> None:
+        _th_cond_signal(self._buf)
+
+    def notify_all(self) -> None:
+        _th_cond_broadcast(self._buf)
+
+    def destroy(self) -> None:
+        if not self._destroyed:
+            _th_cond_destroy(self._buf)
+            _th_free(self._buf)
+            self._destroyed = True
+
+@extern("calloc")
+def _th_calloc_i64(nmemb: int, size: int) -> addr[i64]:
+    pass
+
+@extern("free")
+def _th_free_i64(p: addr[i64]) -> None:
+    pass
+
+class AtomicInt:
+    _ptr: addr[i64]
+    _destroyed: bool
+
+    def __init__(self, initial: i64 = 0) -> None:
+        self._ptr = _th_calloc_i64(1, 8)
+        self._destroyed = False
+        atomic_store(self._ptr, initial)
+
+    def load(self) -> i64:
+        return atomic_load(self._ptr)
+
+    def store(self, value: i64) -> None:
+        atomic_store(self._ptr, value)
+
+    def add(self, delta: i64) -> i64:
+        return atomic_add(self._ptr, delta)
+
+    def sub(self, delta: i64) -> i64:
+        return atomic_sub(self._ptr, delta)
+
+    def cas(self, expected: i64, desired: i64) -> bool:
+        return atomic_cas(self._ptr, expected, desired)
+
+    def xchg(self, value: i64) -> i64:
+        return atomic_xchg(self._ptr, value)
+
+    def ptr(self) -> addr[i64]:
+        return self._ptr
+
+    def destroy(self) -> None:
+        if not self._destroyed:
+            _th_free_i64(self._ptr)
+            self._destroyed = True
