@@ -64,6 +64,34 @@ def _th_cond_signal(c: addr[u8]) -> i32:
 def _th_cond_broadcast(c: addr[u8]) -> i32:
     pass
 
+@extern("pthread_rwlock_init")
+def _th_rwlock_init(rw: addr[u8], attr: addr[u8] | None) -> i32:
+    pass
+
+@extern("pthread_rwlock_destroy")
+def _th_rwlock_destroy(rw: addr[u8]) -> i32:
+    pass
+
+@extern("pthread_rwlock_rdlock")
+def _th_rwlock_rdlock(rw: addr[u8]) -> i32:
+    pass
+
+@extern("pthread_rwlock_tryrdlock")
+def _th_rwlock_tryrdlock(rw: addr[u8]) -> i32:
+    pass
+
+@extern("pthread_rwlock_wrlock")
+def _th_rwlock_wrlock(rw: addr[u8]) -> i32:
+    pass
+
+@extern("pthread_rwlock_trywrlock")
+def _th_rwlock_trywrlock(rw: addr[u8]) -> i32:
+    pass
+
+@extern("pthread_rwlock_unlock")
+def _th_rwlock_unlock(rw: addr[u8]) -> i32:
+    pass
+
 def current_thread_id() -> u64:
     return _th_pthread_self()
 
@@ -207,3 +235,40 @@ class AtomicInt:
         if not self._destroyed:
             _th_free_i64(self._ptr)
             self._destroyed = True
+
+class RWLock:
+    _buf: addr[u8]
+    _destroyed: bool
+
+    def __init__(self) -> None:
+        self._buf = _th_calloc(1, 256)
+        self._destroyed = False
+        rc = _th_rwlock_init(self._buf, None)
+        if rc != i32(0):
+            _th_free(self._buf)
+            raise "RuntimeError: pthread_rwlock_init failed"
+
+    def acquire_read(self) -> None:
+        _th_rwlock_rdlock(self._buf)
+
+    def try_acquire_read(self) -> bool:
+        return _th_rwlock_tryrdlock(self._buf) == i32(0)
+
+    def acquire_write(self) -> None:
+        _th_rwlock_wrlock(self._buf)
+
+    def try_acquire_write(self) -> bool:
+        return _th_rwlock_trywrlock(self._buf) == i32(0)
+
+    def release(self) -> None:
+        _th_rwlock_unlock(self._buf)
+
+    def raw_ptr(self) -> addr[u8]:
+        return self._buf
+
+    def destroy(self) -> None:
+        if not self._destroyed:
+            _th_rwlock_destroy(self._buf)
+            _th_free(self._buf)
+            self._destroyed = True
+

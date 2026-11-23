@@ -60,6 +60,30 @@ def _os_libc_getcwd(buf: addr[u8], size: int) -> addr[u8] | None:
 def _os_libc_unlink(path: addr[u8]) -> i32:
     pass
 
+@extern("rename")
+def _os_libc_rename(oldpath: addr[u8], newpath: addr[u8]) -> i32:
+    pass
+
+@extern("open")
+def _os_libc_open(path: addr[u8], flags: i32, mode: i32) -> i32:
+    pass
+
+@extern("close")
+def _os_libc_close(fd: i32) -> i32:
+    pass
+
+@extern("fsync")
+def _os_libc_fsync(fd: i32) -> i32:
+    pass
+
+@extern("pread")
+def _os_libc_pread(fd: i32, buf: addr[u8], count: int, offset: i64) -> int:
+    pass
+
+@extern("pwrite")
+def _os_libc_pwrite(fd: i32, buf: addr[u8], count: int, offset: i64) -> int:
+    pass
+
 @extern("symlink")
 def _os_libc_symlink(target: addr[u8], linkpath: addr[u8]) -> i32:
     pass
@@ -135,6 +159,34 @@ def getcwd() -> str:
 
 def remove(path: str) -> bool:
     return _os_libc_unlink(path.bin) == i32(0)
+
+def rename(oldpath: str, newpath: str) -> bool:
+    return _os_libc_rename(oldpath.bin, newpath.bin) == i32(0)
+
+def open_fd(path: str, flags: i32, mode: i32 = i32(420)) -> i32:
+    return _os_libc_open(path.bin, flags, mode)
+
+def close_fd(fd: i32) -> bool:
+    return _os_libc_close(fd) == i32(0)
+
+def fsync(fd: i32) -> bool:
+    return _os_libc_fsync(fd) == i32(0)
+
+def pread(fd: i32, count: int, offset: i64) -> str:
+    if count <= 0:
+        return ""
+    buf = _os_malloc(count + 1)
+    n = _os_libc_pread(fd, buf, count, offset)
+    if n <= 0:
+        _os_free(buf)
+        return ""
+    val(buf + n) = u8(0)
+    res = unbin(buf)
+    _os_free(buf)
+    return res
+
+def pwrite(fd: i32, data: str, offset: i64) -> int:
+    return _os_libc_pwrite(fd, data.bin, len(data), offset)
 
 def symlink(target: str, linkpath: str) -> bool:
     return _os_libc_symlink(target.bin, linkpath.bin) == i32(0)

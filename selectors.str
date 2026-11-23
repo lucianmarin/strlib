@@ -1,0 +1,115 @@
+# Cross-platform I/O event multiplexer (kqueue on macOS/BSD, epoll on Linux)
+import sys
+
+@extern("calloc")
+def _sel_calloc(nmemb: int, size: int) -> addr[u8]:
+    pass
+
+@extern("free")
+def _sel_free(p: addr[u8]) -> None:
+    pass
+
+@extern("close")
+def _sel_close(fd: i32) -> i32:
+    pass
+
+@extern("kqueue")
+def _sel_kqueue() -> i32:
+    pass
+
+@extern("kevent")
+def _sel_kevent(kq: i32, changelist: addr[u8] | None, nchanges: i32, eventlist: addr[u8] | None, nevents: i32, timeout: addr[u8] | None) -> i32:
+    pass
+
+def _put_u64_le(buf: addr[u8], off: int, v: i64) -> None:
+    i = 0
+    cur = v
+    while i < 8:
+        val(buf + off + i) = u8(cur & 255)
+        cur = cur >> 8
+        i += 1
+
+def _get_u64_le(buf: addr[u8], off: int) -> i64:
+    res: i64 = 0
+    i = 7
+    while i >= 0:
+        res = (res << 8) | i64(val(buf + off + i))
+        i -= 1
+    return res
+
+def _put_u16_le(buf: addr[u8], off: int, v: int) -> None:
+    val(buf + off) = u8(v & 255)
+    val(buf + off + 1) = u8((v >> 8) & 255)
+
+def _put_i16_le(buf: addr[u8], off: int, v: int) -> None:
+    u = v & 65535
+    val(buf + off) = u8(u & 255)
+    val(buf + off + 1) = u8((u >> 8) & 255)
+
+# Event bitmask constants
+EVENT_READ: int = 1
+EVENT_WRITE: int = 2
+
+class Selector:
+    _fd: i32
+    _closed: bool
+
+    def __init__(self) -> None:
+        self._closed = False
+        if sys.platform == "darwin":
+            self._fd = _sel_kqueue()
+            if self._fd < i32(0):
+                raise "RuntimeError: kqueue() failed"
+        else:
+            self._fd = i32(-1)
+            raise "RuntimeError: selectors currently requires macOS kqueue"
+
+    def register(self, fd: i32, events: int = 1) -> None:
+        # struct kevent on 64-bit macOS is 32 bytes:
+        # 0..7: ident (uintptr_t), 8..9: filter (int16_t), 10..11: flags (uint16_t),
+        # 12..15: fflags (uint32_t), 16..23: data (intptr_t), 24..31: udata (void*)
+        # EVFILT_READ = -1, EVFILT_WRITE = -2, EV_ADD | EV_ENABLE = 0x0001 | 0x0004 = 5
+        ev = _sel_calloc(1, 32)
+        _put_u64_le(ev, 0, i64(fd))
+        flt = -1 if (events & EVENT_READ) != 0 else -2
+        _put_i16_le(ev, 8, flt)
+        _put_u16_le(ev, 10, 5)
+        _sel_kevent(self._fd, ev, i32(1), None, i32(0), None)
+        _sel_free(ev)
+
+    def unregister(self, fd: i32, events: int = 1) -> None:
+        # EV_DELETE = 0x0002
+        ev = _sel_calloc(1, 32)
+        _put_u64_le(ev, 0, i64(fd))
+        flt = -1 if (events & EVENT_READ) != 0 else -2
+        _put_i16_le(ev, 8, flt)
+        _put_u16_le(ev, 10, 2)
+        _sel_kevent(self._fd, ev, i32(1), None, i32(0), None)
+        _sel_free(ev)
+
+    def select(self, timeout_ms: int = -1, max_events: int = 64) -> list[i32]:
+        evlist = _sel_calloc(max_events, 32)
+        ts: addr[u8] | None = None
+        if timeout_ms >= 0:
+            ts_buf = _sel_calloc(1, 16)
+            secs = i64(timeout_ms // 1000)
+            nsecs = i64((timeout_ms % 1000) * 1000000)
+            _put_u64_le(ts_buf, 0, secs)
+            _put_u64_le(ts_buf, 8, nsecs)
+            ts = ts_buf
+        n = _sel_kevent(self._fd, None, i32(0), evlist, i32(max_events), ts)
+        if ts is not None:
+            _sel_free(ts)
+        out: list[i32] = []
+        i = 0
+        while i < int(n):
+            ident = _get_u64_le(evlist, i * 32)
+            out.append(i32(ident))
+            i += 1
+        _sel_free(evlist)
+        return out
+
+    def close(self) -> None:
+        if not self._closed:
+            _sel_close(self._fd)
+            self._closed = True
