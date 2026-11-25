@@ -1,23 +1,23 @@
-# LMON (Light Machine / Lucian Marin Object Notation) parser & serializer for Stricta
+# LMON (Light Machine Object Notation) parser & serializer for Stricta
 
 # Value kind constants
-LMON_NULL: int = 0
-LMON_BOOL: int = 1
-LMON_INT: int = 2
-LMON_FLOAT: int = 3
-LMON_STR: int = 4
-LMON_ARRAY: int = 5
-LMON_OBJECT: int = 6
+DOM_NULL: int = 0
+DOM_BOOL: int = 1
+DOM_INT: int = 2
+DOM_FLOAT: int = 3
+DOM_STR: int = 4
+DOM_ARRAY: int = 5
+DOM_OBJECT: int = 6
 
-class LmonValue:
+class DOM:
     kind: int
     bval: bool
     ival: int
     fval: float
     sval: str
-    arr: list[LmonValue]
+    arr: list[DOM]
     keys: list[str]
-    vals: list[LmonValue]
+    vals: list[DOM]
 
     def __init__(self, kind: int) -> None:
         self.kind = kind
@@ -29,8 +29,8 @@ class LmonValue:
         self.keys = []
         self.vals = []
 
-    def copy(self) -> LmonValue:
-        c = LmonValue(self.kind)
+    def copy(self) -> DOM:
+        c = DOM(self.kind)
         c.bval = self.bval
         c.ival = self.ival
         c.fval = self.fval
@@ -43,49 +43,49 @@ class LmonValue:
         return c
 
     def is_null(self) -> bool:
-        return self.kind == LMON_NULL
+        return self.kind == DOM_NULL
 
     def is_bool(self) -> bool:
-        return self.kind == LMON_BOOL
+        return self.kind == DOM_BOOL
 
     def is_int(self) -> bool:
-        return self.kind == LMON_INT
+        return self.kind == DOM_INT
 
     def is_float(self) -> bool:
-        return self.kind == LMON_FLOAT
+        return self.kind == DOM_FLOAT
 
     def is_str(self) -> bool:
-        return self.kind == LMON_STR
+        return self.kind == DOM_STR
 
     def is_array(self) -> bool:
-        return self.kind == LMON_ARRAY
+        return self.kind == DOM_ARRAY
 
     def is_object(self) -> bool:
-        return self.kind == LMON_OBJECT
+        return self.kind == DOM_OBJECT
 
     def as_str(self, default: str = "") -> str:
-        if self.kind == LMON_STR:
+        if self.kind == DOM_STR:
             return self.sval.copy()
         return default.copy()
 
     def as_int(self, default: int = 0) -> int:
-        if self.kind == LMON_INT:
+        if self.kind == DOM_INT:
             return self.ival
         return default
 
     def as_float(self, default: float = 0.0) -> float:
-        if self.kind == LMON_FLOAT:
+        if self.kind == DOM_FLOAT:
             return self.fval
-        if self.kind == LMON_INT:
+        if self.kind == DOM_INT:
             return float(self.ival)
         return default
 
     def as_bool(self, default: bool = False) -> bool:
-        if self.kind == LMON_BOOL:
+        if self.kind == DOM_BOOL:
             return self.bval
         return default
 
-    def push(self, v: LmonValue) -> None:
+    def push(self, v: DOM) -> None:
         self.arr.append(v)
 
     def has(self, key: str) -> bool:
@@ -94,39 +94,39 @@ class LmonValue:
                 return True
         return False
 
-    def get(self, key: str) -> LmonValue | None:
+    def get(self, key: str) -> DOM | None:
         for i in range(len(self.keys)):
             if self.keys[i] == key:
                 return self.vals[i].copy()
         return None
 
-    def get_ref(self, key: str) -> ref[LmonValue] | None:
+    def get_ref(self, key: str) -> ref[DOM] | None:
         for i in range(len(self.keys)):
             if self.keys[i] == key:
                 return self.vals[i].ref
         return None
 
-    def get_mut(self, key: str) -> mut_ref[LmonValue] | None:
+    def get_mut(self, key: str) -> mut_ref[DOM] | None:
         for i in range(len(self.keys)):
             if self.keys[i] == key:
                 return self.vals[i].mut_ref
         return None
 
-    def at(self, idx: int) -> ref[LmonValue]:
+    def at(self, idx: int) -> ref[DOM]:
         return self.arr[idx].ref
 
-    def at_mut(self, idx: int) -> mut_ref[LmonValue]:
+    def at_mut(self, idx: int) -> mut_ref[DOM]:
         return self.arr[idx].mut_ref
 
     def get_str(self, key: str, default: str = "") -> str:
         for i in range(len(self.keys)):
-            if self.keys[i] == key and self.vals[i].kind == LMON_STR:
+            if self.keys[i] == key and self.vals[i].kind == DOM_STR:
                 return self.vals[i].sval.copy()
         return default.copy()
 
     def get_int(self, key: str, default: int = 0) -> int:
         for i in range(len(self.keys)):
-            if self.keys[i] == key and self.vals[i].kind == LMON_INT:
+            if self.keys[i] == key and self.vals[i].kind == DOM_INT:
                 return self.vals[i].ival
         return default
 
@@ -138,11 +138,11 @@ class LmonValue:
 
     def get_bool(self, key: str, default: bool = False) -> bool:
         for i in range(len(self.keys)):
-            if self.keys[i] == key and self.vals[i].kind == LMON_BOOL:
+            if self.keys[i] == key and self.vals[i].kind == DOM_BOOL:
                 return self.vals[i].bval
         return default
 
-    def set(self, key: str, val: LmonValue) -> None:
+    def set(self, key: str, val: DOM) -> None:
         for i in range(len(self.keys)):
             if self.keys[i] == key:
                 self.vals[i] = val
@@ -151,42 +151,42 @@ class LmonValue:
         self.vals.append(val)
 
     def len_val(self) -> int:
-        if self.kind == LMON_ARRAY:
+        if self.kind == DOM_ARRAY:
             return len(self.arr)
-        if self.kind == LMON_OBJECT:
+        if self.kind == DOM_OBJECT:
             return len(self.keys)
-        if self.kind == LMON_STR:
+        if self.kind == DOM_STR:
             return len(self.sval)
         return 0
 
-def lmon_null() -> LmonValue:
-    return LmonValue(LMON_NULL)
+def lmon_null() -> DOM:
+    return DOM(DOM_NULL)
 
-def lmon_bool(b: bool) -> LmonValue:
-    v = LmonValue(LMON_BOOL)
+def lmon_bool(b: bool) -> DOM:
+    v = DOM(DOM_BOOL)
     v.bval = b
     return v
 
-def lmon_int(i: int) -> LmonValue:
-    v = LmonValue(LMON_INT)
+def lmon_int(i: int) -> DOM:
+    v = DOM(DOM_INT)
     v.ival = i
     return v
 
-def lmon_float(f: float) -> LmonValue:
-    v = LmonValue(LMON_FLOAT)
+def lmon_float(f: float) -> DOM:
+    v = DOM(DOM_FLOAT)
     v.fval = f
     return v
 
-def lmon_str(s: str) -> LmonValue:
-    v = LmonValue(LMON_STR)
+def lmon_str(s: str) -> DOM:
+    v = DOM(DOM_STR)
     v.sval = s
     return v
 
-def lmon_array() -> LmonValue:
-    return LmonValue(LMON_ARRAY)
+def lmon_array() -> DOM:
+    return DOM(DOM_ARRAY)
 
-def lmon_object() -> LmonValue:
-    return LmonValue(LMON_OBJECT)
+def lmon_object() -> DOM:
+    return DOM(DOM_OBJECT)
 
 def _is_alpha_or_us(b: int) -> bool:
     return (b >= 65 and b <= 90) or (b >= 97 and b <= 122) or b == 95
@@ -488,7 +488,7 @@ class _Parser:
             else:
                 self.fail("unescaped control character in string", p)
 
-    def parse_number(self) -> LmonValue:
+    def parse_number(self) -> DOM:
         start = self.pos
         p = start
         n = self.n
@@ -530,7 +530,7 @@ class _Parser:
             return lmon_float(float(raw))
         return lmon_int(int(raw))
 
-    def parse_inline_array(self) -> LmonValue:
+    def parse_inline_array(self) -> DOM:
         self.pos += 1
         while self.pos < self.n and int(self.buf[self.pos]) == 32:
             self.pos += 1
@@ -559,7 +559,7 @@ class _Parser:
             else:
                 self.fail("expected ',' or ']' in inline array", self.pos)
 
-    def parse_inline_value(self) -> LmonValue:
+    def parse_inline_value(self) -> DOM:
         p = self.pos
         n = self.n
         if p >= n:
@@ -618,7 +618,7 @@ class _Parser:
         nb = int(self.buf[p + 1])
         return nb == 32 or nb == 10 or nb == 13
 
-    def parse_nested_block(self, expected_indent: int, from_object: bool) -> LmonValue:
+    def parse_nested_block(self, expected_indent: int, from_object: bool) -> DOM:
         indent = self.peek_line()
         if indent < 0:
             self.fail("expected indented block, got end of input", self.pos)
@@ -642,7 +642,7 @@ class _Parser:
         self.fail("nested block must be a block object or block array", self.pos)
         return lmon_null()
 
-    def parse_block_object(self, expected_indent: int, has_fk_in: bool, first_key: str) -> LmonValue:
+    def parse_block_object(self, expected_indent: int, has_fk_in: bool, first_key: str) -> DOM:
         obj = lmon_object()
         has_fk = has_fk_in
         while True:
@@ -675,7 +675,7 @@ class _Parser:
                 obj.set(key, val)
         return obj
 
-    def parse_block_array(self, expected_indent: int, in_object: bool) -> LmonValue:
+    def parse_block_array(self, expected_indent: int, in_object: bool) -> DOM:
         arr = lmon_array()
         while True:
             indent = self.peek_line()
@@ -700,7 +700,7 @@ class _Parser:
                 arr.push(elem)
         return arr
 
-    def parse_document(self) -> LmonValue:
+    def parse_document(self) -> DOM:
         if self.n >= 3 and int(self.buf[0]) == 0xEF and int(self.buf[1]) == 0xBB and int(self.buf[2]) == 0xBF:
             self.fail("UTF-8 BOM is not allowed", 0)
         self.line_indent = -2
@@ -741,7 +741,7 @@ class _Parser:
             self.fail("unexpected trailing content after root value", self.line_start)
         return res
 
-def loads(text: str) -> LmonValue:
+def loads(text: str) -> DOM:
     p = _Parser(text.copy())
     return p.parse_document()
 
@@ -801,20 +801,20 @@ def _format_key(k: str) -> str:
         return k.copy()
     return _escape_string(k)
 
-def _try_format_inline(val: LmonValue) -> str | None:
-    if val.kind == LMON_NULL:
+def _try_format_inline(val: DOM) -> str | None:
+    if val.kind == DOM_NULL:
         return "null"
-    if val.kind == LMON_BOOL:
+    if val.kind == DOM_BOOL:
         return "true" if val.bval else "false"
-    if val.kind == LMON_INT:
+    if val.kind == DOM_INT:
         return str(val.ival)
-    if val.kind == LMON_FLOAT:
+    if val.kind == DOM_FLOAT:
         return str(val.fval)
-    if val.kind == LMON_STR:
+    if val.kind == DOM_STR:
         return _escape_string(val.sval)
-    if val.kind == LMON_OBJECT:
+    if val.kind == DOM_OBJECT:
         return "{}" if len(val.keys) == 0 else None
-    if val.kind == LMON_ARRAY:
+    if val.kind == DOM_ARRAY:
         if len(val.arr) == 0:
             return "[]"
         parts: list[str] = []
@@ -840,9 +840,9 @@ def _repeat_str(unit: str, count: int) -> str:
         parts.append(unit.copy())
     return "".join(parts)
 
-def _emit_block(val: LmonValue, depth: int, unit: str, lines: list[str]) -> None:
+def _emit_block(val: DOM, depth: int, unit: str, lines: list[str]) -> None:
     prefix = _repeat_str(unit, depth)
-    if val.kind == LMON_OBJECT:
+    if val.kind == DOM_OBJECT:
         for i in range(len(val.keys)):
             fkey = _format_key(val.keys[i])
             inline = _try_format_inline(val.vals[i])
@@ -850,9 +850,9 @@ def _emit_block(val: LmonValue, depth: int, unit: str, lines: list[str]) -> None
                 lines.append(f"{prefix}{fkey}: {inline}")
             else:
                 lines.append(f"{prefix}{fkey}:")
-                child_depth = depth if val.vals[i].kind == LMON_ARRAY else depth + 1
+                child_depth = depth if val.vals[i].kind == DOM_ARRAY else depth + 1
                 _emit_block(val.vals[i], child_depth, unit, lines)
-    elif val.kind == LMON_ARRAY:
+    elif val.kind == DOM_ARRAY:
         for item in val.arr:
             inline = _try_format_inline(item)
             if inline is not None:
@@ -861,7 +861,7 @@ def _emit_block(val: LmonValue, depth: int, unit: str, lines: list[str]) -> None
                 lines.append(f"{prefix}-")
                 _emit_block(item, depth + 1, unit, lines)
 
-def dumps(val: LmonValue, indent: int = 4) -> str:
+def dumps(val: DOM, indent: int = 4) -> str:
     unit = _repeat_str(" ", indent if indent >= 1 else 4)
     inline = _try_format_inline(val)
     if inline is not None:

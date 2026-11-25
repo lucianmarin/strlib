@@ -1,0 +1,21 @@
+# HTML escaping and unescaping utilities for Stricta (modeled after Python's html module)
+
+def escape(s: str, quote: bool = True) -> str:
+    out = s.replace("&", "&amp;")
+    out = out.replace("<", "&lt;")
+    out = out.replace(">", "&gt;")
+    if quote:
+        out = out.replace('"', "&quot;")
+        out = out.replace("'", "&#x27;")
+    return out
+
+def unescape(s: str) -> str:
+    out = s.replace("&quot;", '"')
+    out = out.replace("&#x27;", "'")
+    out = out.replace("&#39;", "'")
+    out = out.replace("&apos;", "'")
+    out = out.replace("&lt;", "<")
+    out = out.replace("&gt;", ">")
+    out = out.replace("&nbsp;", " ")
+    out = out.replace("&amp;", "&")
+    return out

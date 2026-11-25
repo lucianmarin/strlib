@@ -1,0 +1,28 @@
+import crypto
+
+def main() -> None:
+    # 1. Base64 encode/decode (standard + URL-safe)
+    assert crypto.b64encode("hello world") == "aGVsbG8gd29ybGQ="
+    assert crypto.b64decode("aGVsbG8gd29ybGQ=") == "hello world"
+    assert crypto.b64decode(crypto.b64encode("user:42/ok", True)) == "user:42/ok"
+
+    # 2. RFC 4231 Test Case 2: HMAC-SHA256("Jefe", "what do ya want for nothing?")
+    mac = crypto.hmac_sha256("Jefe", "what do ya want for nothing?")
+    assert mac == "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
+
+    # 3. Constant-time compare_digest
+    assert crypto.compare_digest(mac, mac)
+    assert not crypto.compare_digest(mac, "0000")
+
+    # 4. RFC 6070 / PBKDF2-HMAC-SHA256 test vector ("password", "salt", 1, 32)
+    dk = crypto.pbkdf2_hmac_sha256("password", "salt", 1, 32)
+    assert dk == "120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b"
+
+    # 5. Signed tokens
+    tok = crypto.sign_token("super-secret", "user_id=1")
+    assert crypto.verify_token("super-secret", tok) == "user_id=1"
+    assert crypto.verify_token("wrong-secret", tok) == ""
+
+    print("test_crypto: PASS")
+
+main()

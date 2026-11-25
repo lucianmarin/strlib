@@ -1,0 +1,224 @@
+# Cryptographic primitives for Stricta: Base64, HMAC-SHA256, PBKDF2-HMAC-SHA256, signed tokens
+import hashlib
+
+_B64_STD: str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+_B64_URL: str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+
+@extern("malloc")
+def _cr_malloc(size: i64) -> addr[u8]:
+    pass
+
+@extern("free")
+def _cr_free(ptr: addr[u8]) -> None:
+    pass
+
+def _bytes_to_str(bs: list[int]) -> str:
+    n = len(bs)
+    buf = _cr_malloc(i64(n + 1))
+    i = 0
+    while i < n:
+        buf[i] = u8(bs[i] & 255)
+        i += 1
+    buf[n] = u8(0)
+    res = unbin(buf)
+    _cr_free(buf)
+    return res
+
+def _str_to_bytes(s: str) -> list[int]:
+    n = len(s)
+    p = s.bin
+    out: list[int] = []
+    i = 0
+    while i < n:
+        out.append(int(p[i]))
+        i += 1
+    return out
+
+def _hex_to_bytes(h: str) -> list[int]:
+    n = len(h)
+    p = h.bin
+    out: list[int] = []
+    i = 0
+    while i + 1 < n:
+        hi = int(p[i])
+        lo = int(p[i + 1])
+        hv = hi - 48 if hi <= 57 else (hi - 87 if hi >= 97 else hi - 55)
+        lv = lo - 48 if lo <= 57 else (lo - 87 if lo >= 97 else lo - 55)
+        out.append((hv << 4) | lv)
+        i += 2
+    return out
+
+def _bytes_to_hex(bs: list[int]) -> str:
+    digits = "0123456789abcdef"
+    parts: list[str] = []
+    for b in bs:
+        hi = (b >> 4) & 15
+        lo = b & 15
+        parts.append(digits[hi:hi + 1] + digits[lo:lo + 1])
+    return "".join(parts)
+
+def _sha256_bytes(bs: list[int]) -> list[int]:
+    n = len(bs)
+    buf = _cr_malloc(i64(n + 1))
+    i = 0
+    while i < n:
+        buf[i] = u8(bs[i] & 255)
+        i += 1
+    buf[n] = u8(0)
+    hex_digest = hashlib._sha256_raw(buf, n)
+    _cr_free(buf)
+    return _hex_to_bytes(hex_digest)
+
+def b64encode_bytes(bs: list[int], urlsafe: bool = False) -> str:
+    alpha = _B64_URL.copy() if urlsafe else _B64_STD.copy()
+    n = len(bs)
+    out: list[str] = []
+    i = 0
+    while i < n:
+        b0 = bs[i]
+        b1 = bs[i + 1] if i + 1 < n else 0
+        b2 = bs[i + 2] if i + 2 < n else 0
+        c0 = (b0 >> 2) & 63
+        c1 = ((b0 & 3) << 4) | ((b1 >> 4) & 15)
+        c2 = ((b1 & 15) << 2) | ((b2 >> 6) & 3)
+        c3 = b2 & 63
+        out.append(alpha[c0:c0 + 1])
+        out.append(alpha[c1:c1 + 1])
+        if i + 1 < n:
+            out.append(alpha[c2:c2 + 1])
+        else:
+            out.append("=")
+        if i + 2 < n:
+            out.append(alpha[c3:c3 + 1])
+        else:
+            out.append("=")
+        i += 3
+    return "".join(out)
+
+def b64encode(s: str, urlsafe: bool = False) -> str:
+    return b64encode_bytes(_str_to_bytes(s), urlsafe)
+
+def _b64_val(b: int) -> int:
+    if b >= 65 and b <= 90:
+        return b - 65
+    if b >= 97 and b <= 122:
+        return b - 71
+    if b >= 48 and b <= 57:
+        return b + 4
+    if b == 43 or b == 45:
+        return 62
+    if b == 47 or b == 95:
+        return 63
+    return -1
+
+def b64decode_bytes(s: str) -> list[int]:
+    n = len(s)
+    p = s.bin
+    out: list[int] = []
+    i = 0
+    while i < n:
+        v0 = _b64_val(int(p[i])) if i < n else -1
+        v1 = _b64_val(int(p[i + 1])) if i + 1 < n else -1
+        v2 = _b64_val(int(p[i + 2])) if i + 2 < n else -1
+        v3 = _b64_val(int(p[i + 3])) if i + 3 < n else -1
+        if v0 < 0 or v1 < 0:
+            break
+        out.append(((v0 << 2) | (v1 >> 4)) & 255)
+        if v2 >= 0:
+            out.append((((v1 & 15) << 4) | (v2 >> 2)) & 255)
+        if v3 >= 0:
+            out.append((((v2 & 3) << 6) | v3) & 255)
+        i += 4
+    return out
+
+def b64decode(s: str) -> str:
+    return _bytes_to_str(b64decode_bytes(s))
+
+def hmac_sha256_bytes(key: list[int], msg: list[int]) -> list[int]:
+    k: list[int] = []
+    if len(key) > 64:
+        k = _sha256_bytes(key)
+    else:
+        for b in key:
+            k.append(b)
+    while len(k) < 64:
+        k.append(0)
+
+    ipad: list[int] = []
+    opad: list[int] = []
+    i = 0
+    while i < 64:
+        ipad.append(k[i] ^ 0x36)
+        opad.append(k[i] ^ 0x5c)
+        i += 1
+    for b in msg:
+        ipad.append(b)
+    inner = _sha256_bytes(ipad)
+    for b in inner:
+        opad.append(b)
+    return _sha256_bytes(opad)
+
+def hmac_sha256(key: str, msg: str) -> str:
+    return _bytes_to_hex(hmac_sha256_bytes(_str_to_bytes(key), _str_to_bytes(msg)))
+
+def compare_digest(a: str, b: str) -> bool:
+    na = len(a)
+    nb = len(b)
+    if na != nb:
+        return False
+    pa = a.bin
+    pb = b.bin
+    diff = 0
+    i = 0
+    while i < na:
+        diff = diff | (int(pa[i]) ^ int(pb[i]))
+        i += 1
+    return diff == 0
+
+def pbkdf2_hmac_sha256(password: str, salt: str, iterations: int = 100000, dklen: int = 32) -> str:
+    pw_bytes = _str_to_bytes(password)
+    salt_bytes = _str_to_bytes(salt)
+    dk: list[int] = []
+    block_idx = 1
+    while len(dk) < dklen:
+        sb: list[int] = []
+        for b in salt_bytes:
+            sb.append(b)
+        sb.append((block_idx >> 24) & 255)
+        sb.append((block_idx >> 16) & 255)
+        sb.append((block_idx >> 8) & 255)
+        sb.append(block_idx & 255)
+
+        u = hmac_sha256_bytes(pw_bytes, sb)
+        t: list[int] = []
+        for b in u:
+            t.append(b)
+        it = 1
+        while it < iterations:
+            u = hmac_sha256_bytes(pw_bytes, u)
+            j = 0
+            while j < len(t):
+                t[j] = t[j] ^ u[j]
+                j += 1
+            it += 1
+        for b in t:
+            if len(dk) < dklen:
+                dk.append(b)
+        block_idx += 1
+    return _bytes_to_hex(dk)
+
+def sign_token(secret: str, payload: str) -> str:
+    enc = b64encode(payload, True)
+    sig = b64encode_bytes(hmac_sha256_bytes(_str_to_bytes(secret), _str_to_bytes(enc)), True)
+    return enc + "." + sig
+
+def verify_token(secret: str, token: str) -> str:
+    dot = token.find(".")
+    if dot <= 0:
+        return ""
+    enc = token[0:dot]
+    sig = token[dot + 1:len(token)]
+    expected = b64encode_bytes(hmac_sha256_bytes(_str_to_bytes(secret), _str_to_bytes(enc)), True)
+    if not compare_digest(sig, expected):
+        return ""
+    return b64decode(enc)

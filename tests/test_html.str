@@ -1,0 +1,10 @@
+import html
+
+def main() -> None:
+    assert html.escape('<a href="x">a & b\'s</a>') == "&lt;a href=&quot;x&quot;&gt;a &amp; b&#x27;s&lt;/a&gt;"
+    assert html.escape('<a href="x">', False) == '&lt;a href="x"&gt;'
+    assert html.unescape("&lt;b&gt;a &amp; b&#x27;s &quot;hi&quot;&lt;/b&gt;") == '<b>a & b\'s "hi"</b>'
+    assert html.unescape("plain text") == "plain text"
+    print("HTML TESTS PASSED")
+
+main()

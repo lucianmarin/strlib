@@ -1,32 +1,32 @@
-# RFC 8259 JSON parser & serializer for Stricta (sharing LmonValue DOM)
+# RFC 8259 JSON parser & serializer for Stricta (sharing DOM type)
 
 import lmon
 from lmon import (
-    LmonValue,
-    LMON_NULL, LMON_BOOL, LMON_INT, LMON_FLOAT, LMON_STR, LMON_ARRAY, LMON_OBJECT,
+    DOM,
+    DOM_NULL, DOM_BOOL, DOM_INT, DOM_FLOAT, DOM_STR, DOM_ARRAY, DOM_OBJECT,
     lmon_null, lmon_bool, lmon_int, lmon_float, lmon_str, lmon_array, lmon_object,
     _escape_string, _hex_digit, _utf8_encode, _is_digit, _repeat_str
 )
 
-def json_null() -> LmonValue:
+def json_null() -> DOM:
     return lmon_null()
 
-def json_bool(b: bool) -> LmonValue:
+def json_bool(b: bool) -> DOM:
     return lmon_bool(b)
 
-def json_int(i: int) -> LmonValue:
+def json_int(i: int) -> DOM:
     return lmon_int(i)
 
-def json_float(f: float) -> LmonValue:
+def json_float(f: float) -> DOM:
     return lmon_float(f)
 
-def json_str(s: str) -> LmonValue:
+def json_str(s: str) -> DOM:
     return lmon_str(s)
 
-def json_array() -> LmonValue:
+def json_array() -> DOM:
     return lmon_array()
 
-def json_object() -> LmonValue:
+def json_object() -> DOM:
     return lmon_object()
 
 class _JsonParser:
@@ -153,7 +153,7 @@ class _JsonParser:
             else:
                 self.fail("unescaped control character", p)
 
-    def parse_number(self) -> LmonValue:
+    def parse_number(self) -> DOM:
         start = self.pos
         p = start
         n = self.n
@@ -191,7 +191,7 @@ class _JsonParser:
             return lmon_float(float(raw))
         return lmon_int(int(raw))
 
-    def parse_array(self) -> LmonValue:
+    def parse_array(self) -> DOM:
         self.pos += 1
         self.skip_ws()
         arr = lmon_array()
@@ -213,7 +213,7 @@ class _JsonParser:
             else:
                 self.fail("expected ',' or ']'", self.pos)
 
-    def parse_object(self) -> LmonValue:
+    def parse_object(self) -> DOM:
         self.pos += 1
         self.skip_ws()
         obj = lmon_object()
@@ -244,7 +244,7 @@ class _JsonParser:
             else:
                 self.fail("expected ',' or '}'", self.pos)
 
-    def parse_value(self) -> LmonValue:
+    def parse_value(self) -> DOM:
         self.skip_ws()
         p = self.pos
         n = self.n
@@ -271,7 +271,7 @@ class _JsonParser:
         self.fail("unexpected character", p)
         return lmon_null()
 
-def loads(text: str) -> LmonValue:
+def loads(text: str) -> DOM:
     tb = text.bin
     if len(text) >= 3 and int(tb[0]) == 0xEF and int(tb[1]) == 0xBB and int(tb[2]) == 0xBF:
         raise "JSONDecodeError: UTF-8 BOM is not allowed"
@@ -282,18 +282,18 @@ def loads(text: str) -> LmonValue:
         p.fail("extra data after JSON value", p.pos)
     return val
 
-def _dumps_val(val: LmonValue, indent: int, depth: int) -> str:
-    if val.kind == LMON_NULL:
+def _dumps_val(val: DOM, indent: int, depth: int) -> str:
+    if val.kind == DOM_NULL:
         return "null"
-    if val.kind == LMON_BOOL:
+    if val.kind == DOM_BOOL:
         return "true" if val.bval else "false"
-    if val.kind == LMON_INT:
+    if val.kind == DOM_INT:
         return str(val.ival)
-    if val.kind == LMON_FLOAT:
+    if val.kind == DOM_FLOAT:
         return str(val.fval)
-    if val.kind == LMON_STR:
+    if val.kind == DOM_STR:
         return _escape_string(val.sval)
-    if val.kind == LMON_ARRAY:
+    if val.kind == DOM_ARRAY:
         if len(val.arr) == 0:
             return "[]"
         parts: list[str] = []
@@ -307,7 +307,7 @@ def _dumps_val(val: LmonValue, indent: int, depth: int) -> str:
         for pt in parts:
             lines.append(pad + pt)
         return "[\n" + ",\n".join(lines) + "\n" + close_pad + "]"
-    if val.kind == LMON_OBJECT:
+    if val.kind == DOM_OBJECT:
         if len(val.keys) == 0:
             return "{}"
         pairs: list[str] = []
@@ -326,5 +326,5 @@ def _dumps_val(val: LmonValue, indent: int, depth: int) -> str:
         return "{\n" + ",\n".join(lines) + "\n" + close_pad + "}"
     return "null"
 
-def dumps(val: LmonValue, indent: int = -1) -> str:
+def dumps(val: DOM, indent: int = -1) -> str:
     return _dumps_val(val, indent, 0)

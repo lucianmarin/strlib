@@ -4,7 +4,7 @@ import os
 import time
 import lmon
 import json
-from lmon import LmonValue
+from lmon import DOM
 
 _uid_seq: int = 0
 
@@ -131,10 +131,10 @@ class Response:
         if self.status_code >= 400:
             raise f"HTTPError: {self.status_code} {self.reason} for url: {self.url}"
 
-    def lmon(self) -> LmonValue:
+    def lmon(self) -> DOM:
         return lmon.loads(self.text)
 
-    def json(self) -> LmonValue:
+    def json(self) -> DOM:
         return json.loads(self.text)
 
 def _parse_headers_file(hdr_path: str) -> tuple[int, str, dict[str, str]]:
@@ -176,7 +176,7 @@ def _parse_headers_file(hdr_path: str) -> tuple[int, str, dict[str, str]]:
 def request(method: str, url: str, headers: dict[str, str] | None = None,
             params: dict[str, str] | None = None, data: str | None = None,
             timeout: float = 30.0, allow_redirects: bool = True,
-            json_data: LmonValue | None = None) -> Response:
+            json_data: DOM | None = None) -> Response:
     full_url = _build_url(url, params)
     stamp = time.time_ns()
     uid = _next_uid()
@@ -264,21 +264,21 @@ def get(url: str, headers: dict[str, str] | None = None,
 
 def post(url: str, data: str | None = None, headers: dict[str, str] | None = None,
          params: dict[str, str] | None = None, timeout: float = 30.0,
-         json_data: LmonValue | None = None) -> Response:
+         json_data: DOM | None = None) -> Response:
     return request("POST", url, headers, params, data, timeout, True, json_data)
 
-def post_json(url: str, body: LmonValue, headers: dict[str, str] | None = None,
+def post_json(url: str, body: DOM, headers: dict[str, str] | None = None,
               params: dict[str, str] | None = None, timeout: float = 30.0) -> Response:
     return request("POST", url, headers, params, None, timeout, True, body)
 
 def put(url: str, data: str | None = None, headers: dict[str, str] | None = None,
         params: dict[str, str] | None = None, timeout: float = 30.0,
-        json_data: LmonValue | None = None) -> Response:
+        json_data: DOM | None = None) -> Response:
     return request("PUT", url, headers, params, data, timeout, True, json_data)
 
 def patch(url: str, data: str | None = None, headers: dict[str, str] | None = None,
           params: dict[str, str] | None = None, timeout: float = 30.0,
-          json_data: LmonValue | None = None) -> Response:
+          json_data: DOM | None = None) -> Response:
     return request("PATCH", url, headers, params, data, timeout, True, json_data)
 
 def delete(url: str, headers: dict[str, str] | None = None,
@@ -292,7 +292,7 @@ def head(url: str, headers: dict[str, str] | None = None,
 async def arequest(method: str, url: str, headers: dict[str, str] | None = None,
                    params: dict[str, str] | None = None, data: str | None = None,
                    timeout: float = 30.0, allow_redirects: bool = True,
-                   json_data: LmonValue | None = None) -> Response:
+                   json_data: DOM | None = None) -> Response:
     return request(method, url, headers, params, data, timeout, allow_redirects, json_data)
 
 async def aget(url: str, headers: dict[str, str] | None = None,
@@ -301,12 +301,12 @@ async def aget(url: str, headers: dict[str, str] | None = None,
 
 async def apost(url: str, data: str | None = None, headers: dict[str, str] | None = None,
                 params: dict[str, str] | None = None, timeout: float = 30.0,
-                json_data: LmonValue | None = None) -> Response:
+                json_data: DOM | None = None) -> Response:
     return request("POST", url, headers, params, data, timeout, True, json_data)
 
 async def aput(url: str, data: str | None = None, headers: dict[str, str] | None = None,
                params: dict[str, str] | None = None, timeout: float = 30.0,
-               json_data: LmonValue | None = None) -> Response:
+               json_data: DOM | None = None) -> Response:
     return request("PUT", url, headers, params, data, timeout, True, json_data)
 
 async def adelete(url: str, headers: dict[str, str] | None = None,
@@ -338,7 +338,7 @@ class Session:
     def request(self, method: str, url: str, headers: dict[str, str] | None = None,
                 params: dict[str, str] | None = None, data: str | None = None,
                 timeout: float = -1.0, allow_redirects: bool = True,
-                json_data: LmonValue | None = None) -> Response:
+                json_data: DOM | None = None) -> Response:
         merged = self.headers.copy()
         if headers is not None:
             for k in headers.keys():
@@ -352,21 +352,21 @@ class Session:
 
     def post(self, url: str, data: str | None = None, headers: dict[str, str] | None = None,
              params: dict[str, str] | None = None, timeout: float = -1.0,
-             json_data: LmonValue | None = None) -> Response:
+             json_data: DOM | None = None) -> Response:
         return self.request("POST", url, headers, params, data, timeout, True, json_data)
 
-    def post_json(self, url: str, body: LmonValue, headers: dict[str, str] | None = None,
+    def post_json(self, url: str, body: DOM, headers: dict[str, str] | None = None,
                   params: dict[str, str] | None = None, timeout: float = -1.0) -> Response:
         return self.request("POST", url, headers, params, None, timeout, True, body)
 
     def put(self, url: str, data: str | None = None, headers: dict[str, str] | None = None,
             params: dict[str, str] | None = None, timeout: float = -1.0,
-            json_data: LmonValue | None = None) -> Response:
+            json_data: DOM | None = None) -> Response:
         return self.request("PUT", url, headers, params, data, timeout, True, json_data)
 
     def patch(self, url: str, data: str | None = None, headers: dict[str, str] | None = None,
               params: dict[str, str] | None = None, timeout: float = -1.0,
-              json_data: LmonValue | None = None) -> Response:
+              json_data: DOM | None = None) -> Response:
         return self.request("PATCH", url, headers, params, data, timeout, True, json_data)
 
     def delete(self, url: str, headers: dict[str, str] | None = None,

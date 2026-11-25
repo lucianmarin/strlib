@@ -8,8 +8,8 @@ Standard library for the **Stricta** programming language, written in Stricta us
 - `time.str` — `time`, `monotonic`, `perf_counter`, `sleep`, `time_ns`
 - `date.str` — `Date`, `today`, `from_iso`, `is_leap_year`, `days_in_month`
 - `datetime.str` — `DateTime`, `TimeDelta`, `now`, `utcnow`, `from_timestamp`
-- `lmon.str` — `loads`, `dumps`, `LmonValue` (LMON parser & canonical serializer)
-- `json.str` — `loads`, `dumps`, `json_object`, `json_array`, etc. (RFC 8259 JSON parser & serializer sharing `LmonValue`)
+- `lmon.str` — `loads`, `dumps`, `DOM` (LMON parser & canonical serializer)
+- `json.str` — `loads`, `dumps`, `json_object`, `json_array`, etc. (RFC 8259 JSON parser & serializer sharing `DOM`)
 - `http.str` — `get`, `post`, `post_json`, `put`, `patch`, `delete`, `head`, `request`, async `aget`/`apost`/`aput`/`adelete`/`arequest`, `Response` (`.json()`, `.lmon()`, `.raise_for_status()`), `Session`, `urlencode`
 - `math.str` — `PI`, `E`, `TAU`, `INF`, `NAN`, trig/hyperbolic/log/exp/power functions (`libm`), `gcd`, `lcm`, `factorial`, `isclose`, `clamp`
 - `re.str` — `compile`, `search`, `match`, `fullmatch`, `findall`, `finditer`, `sub`, `split`, `escape`, `Pattern`, `Match`, `IGNORECASE`, `MULTILINE`

@@ -1,6 +1,6 @@
 import os
 import lmon
-from lmon import LmonValue, lmon_null, lmon_bool, lmon_int, lmon_float, lmon_str, lmon_array, lmon_object
+from lmon import DOM, lmon_null, lmon_bool, lmon_int, lmon_float, lmon_str, lmon_array, lmon_object
 
 def test_scalars_and_containers() -> None:
     doc = lmon.loads("name: \"fetch\"\nversion: 1\nratio: 2.5\nactive: true\nextra: null\ntags: [\"a\", \"b\"]\nempty: {}\n")
