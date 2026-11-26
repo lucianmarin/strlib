@@ -1,5 +1,3 @@
-from typing import Callable
-
 @extern("calloc")
 def _th_calloc(nmemb: int, size: int) -> addr[u8]:
     pass
